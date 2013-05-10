@@ -78,6 +78,7 @@ def kmeans_mds(np.ndarray[double, ndim=3] xyzlist, int k, n_max_iters=100, thres
     scaling / principle coordinate analysis.
     """
     assert xyzlist.shape[1] == 3, 'xyzlist must be n_frames, 3, n_atoms'
+    assert xyzlist.shape[2] % 4 == 0, 'number of atoms must be a multiple of four. you can pad with zeros to get up to that.'
 
     # static type declarations
     cdef int n_frames, n_atoms, n, i
