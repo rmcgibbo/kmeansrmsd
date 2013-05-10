@@ -26,17 +26,34 @@ cdef extern from "lib.h":
 ##############################################################################
 
 def _gower_matrix(X):
-    B = sum(np.dot(x, x.T) for x in X) / float(len(X))   
+    assert X.ndim == 3
+    assert X.shape[1] == 3, 'middle dimension must be three'
+
+    B = sum(np.dot(x.T, x) for x in X) / float(len(X))   
+    
+    assert B.shape == (X.shape[2], X.shape[2])
+    
     b = B.mean(1)
     bb = b.mean()
     return (B - np.add.outer(b, b)) + bb
 
+def _center_inplace(X):
+    assert X.shape[0] == 3
+    muX, muY, muZ = X.mean(1)
+
+    X[0,:] -= muX
+    X[1,:] -= muY
+    X[2,:] -= muZ
+
+
 def _is_mirror_image(X, Y):
+    assert X.shape[0] == 3, 'x.shape[0] != 3'
+    assert Y.shape[0] == 3, 'x.shape[0] != 3'
     ## SVD of correlation matrix
     
-    # print '(Python) covariance', np.dot(X.T, Y)
-    V, L, U = scipy.linalg.svd(np.dot(X.T, Y))
+    V, L, U = scipy.linalg.svd(np.dot(X, Y.T))
     R = np.dot(V, U)
+    assert R.shape == (3,3)
     
     # print '(Python) Determinant', scipy.linalg.det(R)
     if scipy.linalg.det(R) < 0:
@@ -51,16 +68,17 @@ def _average_structure(X, reference=None):
     if np.iscomplex(U).any():
         U = U.real
 
+
     indices = np.argsort(v)[-3:]
     v = np.take(v, indices, 0)
     U = np.take(U, indices, 1)
-    x = U * np.sqrt(v)    
+    x = (U * np.sqrt(v)).T
 
-    x -= x.mean(0)
-    
     if reference is None:
         reference = X[-1]
-    reference -= reference.mean()
+
+    _center_inplace(x)
+    _center_inplace(reference)
     
     x = _rectify_mirror(x, reference)
     if _is_mirror_image(x, reference):
@@ -69,9 +87,11 @@ def _average_structure(X, reference=None):
     return x
     
 def _rectify_mirror(X, Y):
+    assert X.shape[0] == Y.shape[0] == 3, 'first dimension must be 3. you supplied X.shape=%s, Y.shape=%s' % (str(X.shape), str(Y.shape))
+    
     i = 0
     while _is_mirror_image(X, Y) and i < 2:
-        X[:, i] *= -1
+        X[i] *= -1
         i += 1
     return X
 
@@ -81,10 +101,10 @@ def _rectify_mirror(X, Y):
 ##############################################################################
 
 def test_gower_matrix():
-    n_frames = 10
+    n_frames = 1
     n_atoms = 5
 
-    cdef double[:, :, :] X = np.random.randn(n_frames, n_atoms, 3)
+    cdef double[:, :, :] X = np.random.randn(n_frames, 3, n_atoms)
     cdef long[:] assignments = np.zeros(n_frames, dtype=np.int64)
     cdef long k = 0
 
@@ -100,26 +120,24 @@ def test_gower_matrix():
     print 'test_gower_matrix passed'
 
 def test_center_inplace():
-     cdef double[:, :] X = np.random.randn(100, 3)
+     cdef double[:, :] X = np.random.randn(3, 100)
      X2 = np.copy(np.asarray(X))
+     _center_inplace(X2)
      
      center_inplace(&X[0,0], X.shape[0], X.shape[1])
-
-     X2 -= X2.mean(0)
      
      np.testing.assert_array_almost_equal(np.asarray(X), X2)
      print 'test_center_inplace passed'
 
 def test_is_mirror_image():
-    cdef double[:, :] X
-    cdef double[:, :] Y
+    cdef np.ndarray[double, ndim=2] X
+    cdef np.ndarray[double, ndim=2] Y
     
-    for i in range(5):
-        X = np.random.randn(100, 3)
-        Y = np.random.randn(100, 3)
-
-        X = X - np.mean(X, 0)
-        Y = Y - np.mean(Y, 0)
+    for i in range(1000):
+        X = np.random.randn(3, 100)
+        Y = np.random.randn(3, 100)
+        _center_inplace(X)
+        _center_inplace(Y)
     
         result1 = is_mirror_image(&X[0,0], X.shape[0], X.shape[1],
                                   &Y[0,0], Y.shape[0], Y.shape[1])
@@ -133,11 +151,11 @@ def test_average_structure():
     n_frames = 10
     n_atoms = 5
 
-    cdef double[:, :, :] X = np.random.randn(n_frames, n_atoms, 3)
+    cdef double[:, :, :] X = np.random.randn(n_frames, 3, n_atoms)
     X2 = np.asarray(X).copy()
     cdef long[:] assignments = np.zeros(n_frames, dtype=np.int64)
     cdef long k = 0
-    cdef double[:, :] result = np.zeros((n_atoms, 3), dtype=np.double)
+    cdef double[:, :] result = np.zeros((3, n_atoms), dtype=np.double)
 
     average_structure(&X[0,0,0], X.shape[0], X.shape[1], X.shape[2],
                  &assignments[0], assignments.shape[0], k,
@@ -145,8 +163,13 @@ def test_average_structure():
 
 
     r2 = _average_structure(X2)
-    difference = rmsd_kabsch(np.asarray(result), r2)
-    assert difference < 1e-10
+    
+    print np.asarray(result)
+    
+    print r2
+    
+    difference = rmsd_kabsch(np.asarray(result).T, r2.T)
+    np.testing.assert_almost_equal(difference, 0)
 
     print 'test_average_structure passed'
 
@@ -160,7 +183,7 @@ def test_mirror_flipper():
        [  1.05591533e+00,   9.48715369e-01,   1.14833950e+00],
        [ -3.71162052e-01,  -2.00374187e-01,  -6.39289609e-01],
        [ -2.48058346e-01,   9.15185423e-01,  -1.70458350e+00],
-       [  7.49631938e-02,   7.27274697e-01,   1.68029988e-01]])
+       [  7.49631938e-02,   7.27274697e-01,   1.68029988e-01]]).T
 
     cdef np.ndarray[double, ndim=2] conf2 = np.array([[ -2.65586755e-01,  -9.27238597e-01,  -1.88187143e+00],
            [ -5.86940362e-01,  -1.01088117e+00,  -8.27745500e-04],
@@ -171,7 +194,7 @@ def test_mirror_flipper():
            [ -1.05591533e+00,   9.48715369e-01,   1.14833950e+00],
            [  3.71162052e-01,  -2.00374187e-01,  -6.39289609e-01],
            [  2.48058346e-01,   9.15185423e-01,  -1.70458350e+00],
-           [ -7.49631938e-02,   7.27274697e-01,   1.68029988e-01]])
+           [ -7.49631938e-02,   7.27274697e-01,   1.68029988e-01]]).T
 
     cdef np.ndarray[double, ndim=2] reference = np.array([[ 0.82221491, -0.36405214,  1.05510652],
            [-0.11809122,  0.40392022,  1.44847452],
@@ -182,7 +205,11 @@ def test_mirror_flipper():
            [ 2.63017262, -0.04900264, -0.11425032],
            [-0.22778791, -0.30019201, -0.6070062 ],
            [-1.20558585,  0.90675396, -0.8028707 ],
-           [-1.54964163,  0.17207795, -0.62709169]])
+           [-1.54964163,  0.17207795, -0.62709169]]).T
+           
+    conf1 = np.ascontiguousarray(conf1)
+    conf2 = np.ascontiguousarray(conf2)
+    reference = np.ascontiguousarray(reference)
     
 
     cdef np.ndarray[double, ndim=2] conf1_copy = np.copy(conf1)
@@ -200,5 +227,5 @@ def test():
     test_gower_matrix()
     test_center_inplace()
     test_is_mirror_image()
-    test_average_structure()
     test_mirror_flipper()
+    test_average_structure()
