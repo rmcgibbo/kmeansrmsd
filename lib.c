@@ -1,6 +1,6 @@
 // #include <iostream>
 #include <stdlib.h>
-#include <string.h> 
+#include <string.h>
 #include <assert.h>
 #include <math.h>
 
@@ -228,7 +228,8 @@ int gower_matrix(double* X, int X_dim0, int X_dim1, int X_dim2,
     gsl_matrix_view mA, mB;
     int retval = -1;
     int n_assignments = 0;
-    long i;
+    int i, j;
+    long p;
     
     // count the number of assignments
     for (i = 0; i < assignments_dim0; i++) {
@@ -242,12 +243,12 @@ int gower_matrix(double* X, int X_dim0, int X_dim1, int X_dim2,
     }
     mB = gsl_matrix_view_array(B, B_dim0, B_dim1);
 
-    for (i = 0; i < assignments_dim0; i++) {
-        if (assignments[i] != k) {
+    for (p = 0; p < assignments_dim0; p++) {
+        if (assignments[p] != k) {
             continue;
         }
         
-        mA = gsl_matrix_view_array(&X[i*X_dim1*X_dim2], X_dim1, X_dim2);
+        mA = gsl_matrix_view_array(&X[p*X_dim1*X_dim2], X_dim1, X_dim2);
         // B += (1/n_frames) X.T[i] * X[i]
         gsl_blas_dgemm(CblasTrans, CblasNoTrans, 1.0 / n_assignments,
             &mA.matrix, &mA.matrix, 1.0, &mB.matrix);
@@ -268,8 +269,8 @@ int gower_matrix(double* X, int X_dim0, int X_dim1, int X_dim2,
     bb /= X_dim2;
     
     // B = B - np.add.outer(b, b)) + bb
-    for (int i = 0; i < X_dim2; i++) {
-        for (int j = 0; j < X_dim2; j++) {
+    for (i = 0; i < X_dim2; i++) {
+        for (j = 0; j < X_dim2; j++) {
             B[i*X_dim2 + j] +=  bb - (gsl_vector_get(b, i) + gsl_vector_get(b, j));
         }
     }
@@ -318,13 +319,15 @@ int average_structure(double* X, int X_dim0, int X_dim1, int X_dim2,
     // printf("\n");
     
     int i;
+    gsl_vector_view column;
     for (i = 0; i < X_dim2; i++) {
-        gsl_vector_scale(&gsl_matrix_column(evec, i).vector, sqrt(gsl_vector_get(eval, i)));
+        column = gsl_matrix_column(evec, i);
+        gsl_vector_scale(&column.vector, sqrt(gsl_vector_get(eval, i)));
     }
     
     gsl_matrix_view output = gsl_matrix_view_array(R, R_dim0, R_dim1);
-    gsl_matrix_transpose_memcpy(&output.matrix,
-                                &gsl_matrix_submatrix(evec, 0, 0, X_dim2, 3).matrix);
+    gsl_matrix_view submatrix = gsl_matrix_submatrix(evec, 0, 0, X_dim2, 3);
+    gsl_matrix_transpose_memcpy(&output.matrix, &submatrix.matrix);
 
     rectify_mirror(R, R_dim0, R_dim1, &X[status*X_dim1*X_dim2], X_dim1, X_dim2);
 
