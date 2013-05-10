@@ -17,7 +17,7 @@ from mdtraj.geometry import rmsd
 # C++ headers
 ##############################################################################
 
-cdef extern from "lib.h":
+cdef extern from "kmeans_rmsd_subroutines.h":
     int average_structure(double* X, int X_dim0, int X_dim1, int X_dim2,
                       long* assignments, int assignments_dim0, long k,
                       double* R, int R_dim0, int R_dim1) nogil
@@ -26,8 +26,23 @@ cdef extern from "lib.h":
 # Main code
 ##############################################################################
 
-def calculate_g(np.ndarray[double, ndim=3] xyzlist):
-    assert xyzlist.shape[1] == 3
+cdef np.ndarray[np.float32_t, ndim=1] calculate_g(np.ndarray[double, ndim=3] xyzlist):
+    """Calculate the trace of each frame's inner product matrix, for the RMSD
+    calculation
+    
+    Parameters
+    ----------
+    xyzlist : np.ndarray, shape=(n_frames, 3, n_atoms)
+        The cartesian coordinate. They should be already centered.
+    
+    Returns
+    -------
+    g : np.ndarray, shape=(n_frames), dtype=np.float32
+        The inner product list, for each frame
+    """
+    assert xyzlist.shape[1] == 3, 'second dimension must be 3'
+    assert xyzlist.dtype == np.float64, 'this should be double precision'
+    
     cdef int i
     cdef int n_frames = xyzlist.shape[0]
     cdef np.ndarray[np.float32_t, ndim=1] g = np.empty(n_frames, dtype=np.float32)
@@ -36,6 +51,16 @@ def calculate_g(np.ndarray[double, ndim=3] xyzlist):
         g[i] = (xyzlist[i]**2).sum()
 
     return g
+
+cdef remove_center_of_mass(np.ndarray[double, ndim=3] xyzlist):
+    assert xyzlist.shape[1] == 3, 'second dimension must be 3'
+    cdef int i
+    cdef int n_frames = xyzlist.shape[0]
+    for i in range(n_frames):
+        muX, muY, muZ = np.mean(xyzlist[i], axis=1)
+        xyzlist[i, 0, :] -= muX
+        xyzlist[i, 1, :] -= muY
+        xyzlist[i, 2, :] -= muZ
 
 
 def kmeans_mds(np.ndarray[double, ndim=3] xyzlist, int k, n_max_iters=100, threshold=1e-8):
@@ -50,22 +75,35 @@ def kmeans_mds(np.ndarray[double, ndim=3] xyzlist, int k, n_max_iters=100, thres
     """
     assert xyzlist.shape[1] == 3, 'xyzlist must be n_frames, 3, n_atoms'
 
-    # setup for the rmsd calculation
+    # static type declarations
+    cdef int n_frames, n_atoms, n, i
+    cdef np.ndarray[np.float32_t, ndim=1] xyzlist_g             # for RMSD
+    cdef np.ndarray[np.float32_t, ndim=3] xyzlist_float         # single precsion copy
+
+    cdef np.ndarray[long, ndim=1] assignments
+    cdef np.ndarray[double, ndim=3] centers
+    cdef np.ndarray[np.float32_t, ndim=1] centers_g             # for RMSD
+    cdef np.ndarray[np.float32_t, ndim=3] centers_float         # single precision copy for RMSD
+    cdef np.ndarray[np.float32_t, ndim=1] assignment_dist
+    cdef np.ndarray[np.float32_t, ndim=1] d
+    float32_max = np.finfo(np.float32).max
+    
+    
     n_frames, n_atoms = xyzlist.shape[0], xyzlist.shape[2]
     xyzlist_g = calculate_g(xyzlist)
-    cdef np.ndarray[np.float32_t, ndim=3] xyzlist_float = np.asarray(xyzlist, order='C', dtype=np.float32)
+    remove_center_of_mass(xyzlist)
+    xyzlist_float = np.asarray(xyzlist, order='C', dtype=np.float32)
 
     # start with just some random assignments (most stuff unassigned), each
     # cluster only a single state
-    cdef np.ndarray[long, ndim=1] assignments = -1*np.ones(n_frames, dtype=np.int64)
+    assignments = -1*np.ones(n_frames, dtype=np.int64)
     assignments[0:k] = np.arange(k)
     np.random.shuffle(assignments)
 
-    # the j-th cluster has cartesian coorinates centers[j]
-    cdef np.ndarray[double, ndim=3] centers = np.empty((k, 3, n_atoms), dtype=np.float64)
-    cdef np.ndarray[np.float32_t, ndim=3] centers_float = np.empty((k, 3, n_atoms), dtype=np.float32)
-    # assignment_dist[i] gives the RMSD between the ith conformation and its cluster center
-    assignment_dist = np.inf * np.ones(n_frames, dtype=np.float32)
+    centers = np.empty((k, 3, n_atoms), dtype=np.float64)
+    centers_float = np.empty((k, 3, n_atoms), dtype=np.float32)
+    assignment_dist = float32_max * np.ones(n_frames, dtype=np.float32)
+
     scores = [np.inf]
     times = [time.time()]
 
@@ -81,7 +119,7 @@ def kmeans_mds(np.ndarray[double, ndim=3] xyzlist, int k, n_max_iters=100, thres
         centers_float = np.asarray(centers, dtype=np.float32)
 
         # reassign all of the data
-        assignment_dist = np.inf * np.ones(n_frames, dtype=np.float32)
+        assignment_dist = float32_max * np.ones(n_frames, dtype=np.float32)
         for i in range(k):
             d = IRMSD.rmsd_one_to_all(centers_float, xyzlist_float, centers_g, xyzlist_g, n_atoms, i)
             where = d < assignment_dist

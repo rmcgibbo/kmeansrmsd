@@ -1,51 +1,48 @@
-// #include <iostream>
+
 #include <stdlib.h>
 #include <string.h>
-#include <assert.h>
 #include <math.h>
 
-#include "lib.h"
-// #include "cblas.h"
+#include "kmeans_rmsd_subroutines.h"
+
 #include <gsl/gsl_blas.h>
 #include <gsl/gsl_linalg.h>
 #include <gsl/gsl_eigen.h>
-// #include "clapack.h"
 
-// using namespace std;
 
 int gsl_matrix_printf(gsl_matrix *m) {
     // Print a gsl_matrix to stdout
     
-        size_t rows=m->size1;
-        size_t cols=m->size2;
-        size_t row,col,ml;
-        int fill;
-        char buf[100];
-        gsl_vector *maxlen;
+    size_t rows=m->size1;
+    size_t cols=m->size2;
+    size_t row,col,ml;
+    int fill;
+    char buf[100];
+    gsl_vector *maxlen;
 
-        maxlen=gsl_vector_alloc(cols);
-        for (col=0;col<cols;++col) {
-                ml=0;
-                for (row=0;row<rows;++row) {
-                        sprintf(buf, "%f", gsl_matrix_get(m,row,col));
-                        if (strlen(buf)>ml)
-                                ml=strlen(buf);
-                }
-                gsl_vector_set(maxlen,col,ml);
-        }
+    maxlen=gsl_vector_alloc(cols);
+    for (col=0;col<cols;++col) {
+            ml=0;
+            for (row=0;row<rows;++row) {
+                    sprintf(buf, "%f", gsl_matrix_get(m,row,col));
+                    if (strlen(buf)>ml)
+                            ml=strlen(buf);
+            }
+            gsl_vector_set(maxlen,col,ml);
+    }
 
-        for (row=0;row<rows;++row) {
-                for (col=0;col<cols;++col) {
-                        sprintf(buf, "%f", gsl_matrix_get(m,row,col));
-                        fprintf(stdout,"%s",buf);
-                        fill=gsl_vector_get(maxlen,col)+2-strlen(buf);
-                        while (--fill>=0)
-                                fprintf(stdout," ");
-                }
-                fprintf(stdout,"\n");
-        }
-        gsl_vector_free(maxlen);
-        return 0;
+    for (row=0;row<rows;++row) {
+            for (col=0;col<cols;++col) {
+                    sprintf(buf, "%f", gsl_matrix_get(m,row,col));
+                    fprintf(stdout,"%s",buf);
+                    fill=gsl_vector_get(maxlen,col)+2-strlen(buf);
+                    while (--fill>=0)
+                            fprintf(stdout," ");
+            }
+            fprintf(stdout,"\n");
+    }
+    gsl_vector_free(maxlen);
+    return 0;
 }
 
 
@@ -54,7 +51,7 @@ inline double ddet(double* A) {
     
     // Parameters
     // ----------
-    // A : double*
+    // A : double*, shape=(3,3)
     //     pointer to the uppler left corner of the 3x3 matrix A
 
     // Returns
@@ -71,12 +68,12 @@ int center_inplace(double* X, int X_dim0, int X_dim1) {
     // 
     // Parameters
     // ----------
-    // X : double*
+    // X : double*, shape=(X_dim0, X_dim1)
     //     pointer to the upper left corner of the conformation's coordinares.
     // X_dim0 : int
-    //     number of rows of X. This should be the number of atoms.
+    //     number of rows of X. Should be 3
     // X_dim1 : int
-    //     number of columns of X. This should be 3.
+    //     number of columns of X. Corresponds to the number of atoms
     
     if (X_dim0 != 3) {
         fprintf(stderr, "X_dim0 is not 3\n");
@@ -107,22 +104,24 @@ int rectify_mirror(double* X, int X_dim0, int X_dim1,
     // x to -x, y to -y and or z to -z such thats its optimal alignment with
     // respect to a secon frame (Y), involves pure rotation and no inversion.
     // 
+    //  X will also be centered. Conformation Y *SHOULD ALREADY BE CENTERED*
+    // 
     // Parameters
     // ----------
     // X : double*, shape=(X_dim0, X_dim1)
     //    Pointer to the upper left corner of matrix X. This is the conformation
     //    that will be modified
     // X_dim0 : int
-    //    The number of rows in matrix X. This should be the number of atoms.
+    //    The number of rows in matrix X. Should be 3.
     // X_dim1 : int
-    //    The number of columns in matrix X. This should be equal to 3.
+    //    The number of columns in matrix X. Corresponds to the number of atoms
     // Y : double*, shape=(X_dim0, X_dim1)
     //    Pointer to the upper left corner of matrix X. This is the "reference"
     //    conformation.
     // Y_dim0 : int
-    //    The number of rows in matrix Y. This should be the number of atoms.
+    //    The number of rows in matrix Y. Should be 3.
     // Y_dim1 : int
-    //    The number of columns in matrix Y. This should be equal to 3.
+    //    The number of columns in matrix Y. Corresponds to the number of atoms/
 
     if ((X_dim0 != 3) || (Y_dim0 != 3)) {
         fprintf(stderr, "rectify_mirror called with incorrect shape\n");
@@ -130,7 +129,7 @@ int rectify_mirror(double* X, int X_dim0, int X_dim1,
     }
     
     center_inplace(X, X_dim0, X_dim1);
-    center_inplace(Y, Y_dim0, Y_dim1);
+    //center_inplace(Y, Y_dim0, Y_dim1);
 
     int i, j;
     i = 0;
@@ -159,15 +158,15 @@ int is_mirror_image(double* X, int X_dim0, int X_dim1, double* Y, int Y_dim0, in
     // X : double*, shape=(X_dim0, X_dim1)
     //    Pointer to the upper left corner of matrix X.
     // X_dim0 : int
-    //    The number of rows in matrix X. This should be the number of atoms.
+    //    The number of rows in matrix X. Should be 3.
     // X_dim1 : int
-    //    The number of columns in matrix X. This should be equal to 3.
+    //    The number of columns in matrix X. Corresponds to number of atoms
     // Y : double*, shape=(X_dim0, X_dim1)
     //    Pointer to the upper left corner of matrix X.
     // Y_dim0 : int
-    //    The number of rows in matrix Y. This should be the number of atoms.
+    //    The number of rows in matrix Y. Should be 3.
     // Y_dim1 : int
-    //    The number of columns in matrix Y. This should be equal to 3.
+    //    The number of columns in matrix Y. Corresponds to number of atoms
     // 
     // Returns
     // -------
@@ -214,11 +213,26 @@ int gower_matrix(double* X, int X_dim0, int X_dim1, int X_dim2,
     // Gower, J.C. (1966). Some distance properties of latent root
     // and vector methods used in multivariate analysis.
     // Biometrika 53: 325-338
-    
+    // 
     // Parameters
     // ----------
-    // X : array, shape=(n_frames, n_atoms, 3)
-    // frame_indices, shape=(n_frame_indices)
+    // X : double*, shape=(X_dim0, X_dim1, X_dim2)
+    //     The centered cartesian coordinates
+    // assignments : long*, shape=(assignments_dim0)
+    //     The assignments for each frame.
+    // k : long
+    //     The requested state. Only frames with index i such that assignments[i] == k
+    //     will be averaged.
+    // B : double*, shape=(B_dim0, B_dim1)
+    //     The output array. It's a dissimilarity matrix over the atoms, so
+    //     the dimenensions should be n_atoms x n_atoms (that is, X_dim2 x X_dim2)
+    // 
+    // Returns
+    // -------
+    // status : int
+    //     = -1    if none of the frames have assignment[k]. this is an error.
+    //     > 0     when the method runs correctly, the return code will contain
+    //             the index of the last frame assigned to state k.
     
     if ((X_dim1 != 3) || (X_dim2 != B_dim0) || (X_dim2 != B_dim1) || (assignments_dim0 != X_dim0)){
         fprintf(stderr, "gower_matrix called with wrong shapes\n");
@@ -284,6 +298,37 @@ int gower_matrix(double* X, int X_dim0, int X_dim1, int X_dim2,
 int average_structure(double* X, int X_dim0, int X_dim1, int X_dim2,
                       long* assignments, int assignments_dim0, long k,
                       double* R, int R_dim0, int R_dim1) {
+    // Compute an "average conformation" from amongst the conformations
+    // in xyzlist[assignments==k]
+    // 
+    // Parameters (input)
+    // ------------------
+    // X : double*
+    //     pointer to the upper left corner of the trajectoy's coordinates.
+    //     X should be the start of a 3d matrix.
+    // X_dim0 : int
+    //     number of rows of X. Corresponds to the number of frames.
+    // X_dim1 : int
+    //     number of columns of X. This should be 3.
+    // X_dim2 : int
+    //     size of the third dimension of X. Corresponds to the number of atoms.
+    // assignments : long*
+    //     pointer to the beginning of the assignments vector, which contains
+    //     the index of the "state" that each conformation is assigned to.
+    // k : long
+    //     this routine will only touch entries in X corresponding to frames
+    //     whose assignment is equal to k. The other frames will be skipped.
+    // 
+    // Parameters (output)
+    // -------------------
+    // R : double*
+    //     pointer to the start of a conformation where you'd like the resulting
+    //     average structure stored.
+    // R_dim0 : int
+    //     number of rows of R. this should be 3
+    // R_dim1 : int
+    //     number of columns of R. corresponds to the number of atoms
+    
     if ((X_dim1 != R_dim0) || (X_dim2 != R_dim1) || (X_dim1 != 3)){
         fprintf(stderr, "average_structure called with wrong shape\n");
         exit(1);

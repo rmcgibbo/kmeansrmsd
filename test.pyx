@@ -9,7 +9,7 @@ import scipy.linalg
 from mdtraj.geometry.alignment import rmsd_kabsch
 
 
-cdef extern from "lib.h":
+cdef extern from "kmeans_rmsd_subroutines.h":
     int gower_matrix(double* X, int X_dim0, int X_dim1, int X_dim2,
         long* assignments, int assignments_dim0, long k,
         double* B, int B_dim0, int B_dim1)  nogil
