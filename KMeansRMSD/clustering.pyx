@@ -10,6 +10,7 @@ import time
 import itertools
 import numpy as np
 
+from kmeansrmsd.test import _average_structure
 from mdtraj import IRMSD
 from mdtraj.geometry import rmsd
 
@@ -67,7 +68,7 @@ cdef remove_center_of_mass(np.ndarray[double, ndim=3] xyzlist):
 # Main functions
 ##############################################################################
 
-def kmeans_mds(np.ndarray[double, ndim=3] xyzlist, int k, n_max_iters=100, threshold=1e-8):
+def kmeans_mds(np.ndarray[double, ndim=3] xyzlist, int k, max_time=None, threshold=1e-8):
     """k-means clustering with the RMSD distance metric.
 
     this is an iterative algorithm. during each iteration we first move each cluster center to
@@ -95,8 +96,8 @@ def kmeans_mds(np.ndarray[double, ndim=3] xyzlist, int k, n_max_iters=100, thres
     
     
     n_frames, n_atoms = xyzlist.shape[0], xyzlist.shape[2]
-    xyzlist_g = calculate_g(xyzlist)
     remove_center_of_mass(xyzlist)
+    xyzlist_g = calculate_g(xyzlist)
     xyzlist_float = np.asarray(xyzlist, order='C', dtype=np.float32)
 
     # start with just some random assignments (most stuff unassigned), each
@@ -115,9 +116,15 @@ def kmeans_mds(np.ndarray[double, ndim=3] xyzlist, int k, n_max_iters=100, thres
     for n in itertools.count():
         # recenter each cluster based on its current members
         for i in prange(k, nogil=True):
+        #for i in range(k):
+            # x = xyzlist[assignments==i]
+            # if len(x) == 0:
+            #     print 'warning'
+            #     x = xyzlist[np.random.randint(n_frames)]
+            # centers[i] = _average_structure(x)
             average_structure(&xyzlist[0,0,0], xyzlist.shape[0], xyzlist.shape[1], xyzlist.shape[2],
-                &assignments[0], assignments.shape[0], i,
-                &centers[i, 0, 0], centers.shape[1], centers.shape[2])
+               &assignments[0], assignments.shape[0], i,
+               &centers[i, 0, 0], centers.shape[1], centers.shape[2])
 
         # prepare the new centers for RMSD
         centers_g = calculate_g(centers)
@@ -135,12 +142,12 @@ def kmeans_mds(np.ndarray[double, ndim=3] xyzlist, int k, n_max_iters=100, thres
         # and break if necessary
         scores.append(np.sqrt(np.mean(np.square(assignment_dist))))
         times.append(time.time())
-        print 'round %3d, RMS radius %8f, change %.3e' % (n, scores[n], scores[-1] - scores[-2])
+        print 'round %3d, RMS radius %8f, change %.3e' % (n, scores[-1], scores[-1] - scores[-2])
         if threshold is not None and scores[-2] - scores[-1] < threshold:
             print 'score decreased less than threshold (%s). done' % threshold
             break
-        if n_max_iters is not None and n >= n_max_iters:
-            print 'reached maximum number of iterations. done'
+        if max_time is not None and times[-1] >= times[0] + max_time:
+            print 'reached maximum amount of time. done'
             break
 
     print '\nRMSD KMeans Performance Summary'
