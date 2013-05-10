@@ -100,8 +100,8 @@ def kmeans_mds(np.ndarray[double, ndim=3] xyzlist, int k, n_max_iters=100, thres
             print 'reached maximum number of iterations. done'
             break
 
-    print '\nPerformance Summary'
-    print '-------------------'
+    print '\nRMSD KMeans Performance Summary'
+    print '--------------------------------'
     print 'mean time per round (s)   %.4f' % np.mean(np.diff(times))
     print 'stddev time per round (s) %.4f' % np.std(np.diff(times))
     print 'total time (s)            %.4f' % (times[-1] - times[0])
