@@ -164,9 +164,8 @@ def test_average_structure():
 
     r2 = _average_structure(X2)
     
-    print np.asarray(result)
-    
-    print r2
+    #print np.asarray(result)
+    #print r2
     
     difference = rmsd_kabsch(np.asarray(result).T, r2.T)
     np.testing.assert_almost_equal(difference, 0)

@@ -26,6 +26,17 @@ cdef extern from "lib.h":
 # Main code
 ##############################################################################
 
+def calculate_g(np.ndarray[double, ndim=3] xyzlist):
+    assert xyzlist.shape[1] == 3
+    cdef int i
+    cdef int n_frames = xyzlist.shape[0]
+    cdef np.ndarray[np.float32_t, ndim=1] g = np.empty(n_frames, dtype=np.float32)
+    
+    for i in range(n_frames):
+        g[i] = (xyzlist[i]**2).sum()
+
+    return g
+
 
 def kmeans_mds(np.ndarray[double, ndim=3] xyzlist, int k, n_max_iters=100, threshold=1e-8):
     """k-means clustering with the RMSD distance metric.
@@ -37,14 +48,13 @@ def kmeans_mds(np.ndarray[double, ndim=3] xyzlist, int k, n_max_iters=100, thres
     to compute the average conformations, we use a form of classical multidimensional
     scaling / principle coordinate analysis.
     """
-    assert xyzlist.shape[2] == 3
+    assert xyzlist.shape[1] == 3, 'xyzlist must be n_frames, 3, n_atoms'
 
     # setup for the rmsd calculation
-    n_frames, n_atoms = xyzlist.shape[0], xyzlist.shape[1]
-    xyzlist_G = rmsd.calculate_G(np.asarray(xyzlist))
-    xyzlist_irmsd, n_atoms_padded = rmsd.reshape_irmsd(np.asarray(xyzlist))
+    n_frames, n_atoms = xyzlist.shape[0], xyzlist.shape[2]
+    xyzlist_g = calculate_g(xyzlist)
+    cdef np.ndarray[np.float32_t, ndim=3] xyzlist_float = np.asarray(xyzlist, order='C', dtype=np.float32)
 
-    # setup for the clustering stuff
     # start with just some random assignments (most stuff unassigned), each
     # cluster only a single state
     cdef np.ndarray[long, ndim=1] assignments = -1*np.ones(n_frames, dtype=np.int64)
@@ -52,7 +62,8 @@ def kmeans_mds(np.ndarray[double, ndim=3] xyzlist, int k, n_max_iters=100, thres
     np.random.shuffle(assignments)
 
     # the j-th cluster has cartesian coorinates centers[j]
-    cdef np.ndarray[double, ndim=3] centers = np.zeros((k, n_atoms, 3))
+    cdef np.ndarray[double, ndim=3] centers = np.empty((k, 3, n_atoms), dtype=np.float64)
+    cdef np.ndarray[np.float32_t, ndim=3] centers_float = np.empty((k, 3, n_atoms), dtype=np.float32)
     # assignment_dist[i] gives the RMSD between the ith conformation and its cluster center
     assignment_dist = np.inf * np.ones(n_frames, dtype=np.float32)
     scores = [np.inf]
@@ -66,13 +77,13 @@ def kmeans_mds(np.ndarray[double, ndim=3] xyzlist, int k, n_max_iters=100, thres
                 &centers[i, 0, 0], centers.shape[1], centers.shape[2])
 
         # prepare the new centers for RMSD
-        centers_G = rmsd.calculate_G(np.asarray(centers))
-        centers_irmsd, _ = rmsd.reshape_irmsd(np.asarray(centers))
+        centers_g = calculate_g(centers)
+        centers_float = np.asarray(centers, dtype=np.float32)
 
         # reassign all of the data
         assignment_dist = np.inf * np.ones(n_frames, dtype=np.float32)
         for i in range(k):
-            d = IRMSD.rmsd_one_to_all(centers_irmsd, xyzlist_irmsd, centers_G, xyzlist_G, n_atoms, i)
+            d = IRMSD.rmsd_one_to_all(centers_float, xyzlist_float, centers_g, xyzlist_g, n_atoms, i)
             where = d < assignment_dist
             assignments[where] = i
             assignment_dist[where] = d[where]
