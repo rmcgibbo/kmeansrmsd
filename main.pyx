@@ -23,7 +23,7 @@ cdef extern from "kmeans_rmsd_subroutines.h":
                       double* R, int R_dim0, int R_dim1) nogil
 
 ##############################################################################
-# Main code
+# C level utility functions
 ##############################################################################
 
 cdef np.ndarray[np.float32_t, ndim=1] calculate_g(np.ndarray[double, ndim=3] xyzlist):
@@ -62,6 +62,10 @@ cdef remove_center_of_mass(np.ndarray[double, ndim=3] xyzlist):
         xyzlist[i, 1, :] -= muY
         xyzlist[i, 2, :] -= muZ
 
+
+##############################################################################
+# Main functions
+##############################################################################
 
 def kmeans_mds(np.ndarray[double, ndim=3] xyzlist, int k, n_max_iters=100, threshold=1e-8):
     """k-means clustering with the RMSD distance metric.
