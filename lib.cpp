@@ -11,9 +11,6 @@
 
 using namespace std;
 
-int printout() {
-    cout << "std";
-}
 
 inline double ddet(double* A) {
     // Compute the determinant of a 3x3 matrix
@@ -63,15 +60,43 @@ int center_inplace(double* X, int X_dim0, int X_dim1) {
         X[i*3 + 1] -= mu_Y;
         X[i*3 + 2] -= mu_Z;
     }
+    
+    return 0;
 }
 
-int rectify_mirror(double* X, int X_dim0, int X_dim1, double* Y, int Y_dim0, int Y_dim1) {
+int rectify_mirror(double* X, int X_dim0, int X_dim1,
+                   double* Y, int Y_dim0, int Y_dim1) {
+    // Swap the direction of the axes in a conformation so that its optimal
+    // alignment with respect to a second frame involves no mirror inversion
+    // 
+    // This routine modifies the conformation X inplace, by reversing the
+    // direction of one or more of its cartesian directions -- i.e sending
+    // x to -x, y to -y and or z to -z such thats its optimal alignment with
+    // respect to a secon frame (Y), involves pure rotation and no inversion.
+    // 
+    // Parameters
+    // ----------
+    // X : double*, shape=(X_dim0, X_dim1)
+    //    Pointer to the upper left corner of matrix X. This is the conformation
+    //    that will be modified
+    // X_dim0 : int
+    //    The number of rows in matrix X. This should be the number of atoms.
+    // X_dim1 : int
+    //    The number of columns in matrix X. This should be equal to 3.
+    // Y : double*, shape=(X_dim0, X_dim1)
+    //    Pointer to the upper left corner of matrix X. This is the "reference"
+    //    conformation.
+    // Y_dim0 : int
+    //    The number of rows in matrix Y. This should be the number of atoms.
+    // Y_dim1 : int
+    //    The number of columns in matrix Y. This should be equal to 3.
+
     if ((X_dim1 != 3) || (Y_dim1 != 3)) {
         exit(1);
     }
     
     center_inplace(X, X_dim0, X_dim1);
-    center_inplace(X, X_dim0, Y_dim1);
+    center_inplace(Y, Y_dim0, Y_dim1);
 
     int i, j;
     i = 0;
@@ -86,6 +111,8 @@ int rectify_mirror(double* X, int X_dim0, int X_dim1, double* Y, int Y_dim0, int
         cout << "It should NOT be a mirror image now";
         exit(1);
     }
+    
+    return 0;
 }
 
 
@@ -119,20 +146,9 @@ int is_mirror_image(double* X, int X_dim0, int X_dim1, double* Y, int Y_dim0, in
         exit(1);
     }
     
-    // center_inplace(X, X_dim0, X_dim1);
-    // center_inplace(Y, Y_dim0, Y_dim1);
-
     // covariance = dot(X.T, Y)
     double covariance[9];
     cblas_dgemm(CblasRowMajor, CblasTrans, CblasNoTrans, 3, 3, X_dim0, 1.0, X, 3, Y, 3, 0.0, covariance, 3);
-
-    // cout << "(C) Covariance" << endl;
-    // for (i = 0; i < 3; i++) {
-    //     for (j = 0; j < 3; j++) {
-    //         cout << covariance[i*3+j] << ",  ";
-    //     }
-    //     cout << endl;
-    // }
     
     // Now take the SVD of the covariance matrix
     int three = 3;
@@ -159,15 +175,18 @@ int is_mirror_image(double* X, int X_dim0, int X_dim1, double* Y, int Y_dim0, in
     
     // this is not the determinant of the rotation matrix
     double determinant = ddet(U) * ddet(VT);
-    // cout << "(C) Determinant" << endl;
-    // cout << determinant << endl;
     return determinant < 0;
 }
 
 
 int gower_matrix(double* X, int X_dim0, int X_dim1, int X_dim2,
-    long* assignments, int assignments_dim0, long k,
-    double* B, int B_dim0, int B_dim1) {
+                 long* assignments, int assignments_dim0, long k,
+                 double* B, int B_dim0, int B_dim1) {
+    // Compute the Gower matrix over an ensemble of conformations.
+    // 
+    // The result can be thought of as the average dissimilarity between each
+    // of the atoms.
+    //
     // Gower, J.C. (1966). Some distance properties of latent root
     // and vector methods used in multivariate analysis.
     // Biometrika 53: 325-338
@@ -177,14 +196,14 @@ int gower_matrix(double* X, int X_dim0, int X_dim1, int X_dim2,
     // X : array, shape=(n_frames, n_atoms, 3)
     // frame_indices, shape=(n_frame_indices)
     
-    assert (X_dim2 == 3);
-    assert (X_dim1 == B_dim0);
-    assert (X_dim1 == B_dim2);
-    assert (assignments_dim0 == X_dim0);
+    if ((X_dim2 != 3) || (X_dim1 != B_dim0) || (X_dim1 != B_dim1) || (assignments_dim0 != X_dim0)){
+        cout << "gower_matrix called with wrong shapes" << endl;
+        exit(1);
+    }
     
     int retval = -1;
     int n_assignments = 0;
-    long i, j;
+    long i;
     
     // count the number of assignments
     for (i = 0; i < assignments_dim0; i++) {
@@ -294,7 +313,6 @@ int average_structure(double* X, int X_dim0, int X_dim1, int X_dim2,
     }
     
     rectify_mirror(R, R_dim0, R_dim1, &X[status*X_dim1*X_dim2], X_dim1, X_dim2);
-    
     return 1;
 }
 
