@@ -5,13 +5,15 @@ from Cython.Distutils import build_ext
 from numpy.distutils.system_info import get_info
 
 kmeansrmsd = Extension("kmeansrmsd.clustering",
-    sources=["main.pyx", "lib.c"],
+    sources=["main.pyx", "lib.cpp"],
+    language='c++',
     libraries=['m', 'gslcblas', 'gsl'],
     include_dirs = [".", np.get_include()],
     )
 
 kmeansrmsd_test = Extension("kmeansrmsd.test",
-    sources=["test.pyx", "lib.c"],
+    sources=["test.pyx", "lib.cpp"],
+    language='c++',
     libraries=['m', 'gslcblas', 'gsl'],
     include_dirs = [".", np.get_include()],
     )

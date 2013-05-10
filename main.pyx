@@ -2,6 +2,7 @@
 # Python/Cython imports
 ##############################################################################
 
+from libcpp.vector cimport vector
 cimport numpy as np
 from cython.parallel import prange
 
@@ -21,7 +22,6 @@ cdef extern from "lib.h":
     int average_structure(double* X, int X_dim0, int X_dim1, int X_dim2,
                       long* assignments, int assignments_dim0, long k,
                       double* R, int R_dim0, int R_dim1) nogil
-
 ##############################################################################
 # Main code
 ##############################################################################
@@ -36,6 +36,7 @@ def calculate_g(np.ndarray[double, ndim=3] xyzlist):
         g[i] = (xyzlist[i]**2).sum()
 
     return g
+
 
 
 def kmeans_mds(np.ndarray[double, ndim=3] xyzlist, int k, n_max_iters=100, threshold=1e-8):
@@ -60,6 +61,8 @@ def kmeans_mds(np.ndarray[double, ndim=3] xyzlist, int k, n_max_iters=100, thres
     cdef np.ndarray[long, ndim=1] assignments = -1*np.ones(n_frames, dtype=np.int64)
     assignments[0:k] = np.arange(k)
     np.random.shuffle(assignments)
+    
+    # invert_assignments(assignments)
 
     # the j-th cluster has cartesian coorinates centers[j]
     cdef np.ndarray[double, ndim=3] centers = np.empty((k, 3, n_atoms), dtype=np.float64)
@@ -71,7 +74,8 @@ def kmeans_mds(np.ndarray[double, ndim=3] xyzlist, int k, n_max_iters=100, thres
 
     for n in itertools.count():
         # recenter each cluster based on its current members
-        for i in prange(k, nogil=True):
+        #for i in prange(k, nogil=True):
+        for i in range(k):
             average_structure(&xyzlist[0,0,0], xyzlist.shape[0], xyzlist.shape[1], xyzlist.shape[2],
                 &assignments[0], assignments.shape[0], i,
                 &centers[i, 0, 0], centers.shape[1], centers.shape[2])
