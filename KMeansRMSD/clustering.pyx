@@ -106,20 +106,22 @@ def kmeans_mds(np.ndarray[double, ndim=3] xyzlist, int n_real_atoms, int k, max_
     float32_max = np.finfo(np.float32).max
     
     n_frames, n_padded_atoms = xyzlist.shape[0], xyzlist.shape[2]
-    remove_center_of_mass(xyzlist, n_real_atoms)
-    xyzlist_g = calculate_g(xyzlist)
+    dremove_center_of_mass(xyzlist, n_real_atoms)
+    xyzlist_g = dcalculate_g(xyzlist)
     assert not np.any(np.logical_or(np.isinf(xyzlist_g), np.isnan(xyzlist_g))), 'nan in xyzlist G'
     xyzlist_float = np.asarray(xyzlist, order='C', dtype=np.float32)
 
     # start with just some random assignments (most stuff unassigned), each
     # cluster only a single state
-    assignments = -1*np.ones(n_frames, dtype=np.int64)
+    assignments = np.empty(n_frames, dtype=np.int64)
+    assignments.fill(-1)
     assignments[0:k] = np.arange(k)
     np.random.shuffle(assignments)
 
     centers = np.zeros((k, 3, n_padded_atoms), dtype=np.float64)
     centers_float = np.zeros((k, 3, n_padded_atoms), dtype=np.float32)
-    assignment_dist = float32_max * np.ones(n_frames, dtype=np.float32)
+    assignment_dist = np.empty(n_frames, dtype=np.float32)
+    assignment_dist.fill(np.inf)
 
     scores = [np.inf]
     times = [time.time()]
@@ -132,7 +134,7 @@ def kmeans_mds(np.ndarray[double, ndim=3] xyzlist, int n_real_atoms, int k, max_
                &centers[i, 0, 0], centers.shape[1], n_real_atoms, n_padded_atoms)
 
         # prepare the new centers for RMSD
-        centers_g = calculate_g(centers)
+        centers_g = dcalculate_g(centers)
         assert not np.any(np.logical_or(np.isinf(centers_g), np.isnan(centers_g))), 'nan in centers G'
         centers_float = np.asarray(centers, dtype=np.float32)
 
@@ -178,7 +180,7 @@ def kmeans_mds(np.ndarray[double, ndim=3] xyzlist, int n_real_atoms, int k, max_
 ##############################################################################
 
 
-cdef np.ndarray[np.float32_t, ndim=1] calculate_g(np.ndarray[double, ndim=3] xyzlist):
+cpdef np.ndarray[np.float32_t, ndim=1] dcalculate_g(np.ndarray[double, ndim=3] xyzlist):
     """Calculate the trace of each frame's inner product matrix, for the RMSD
     calculation
     
@@ -193,7 +195,6 @@ cdef np.ndarray[np.float32_t, ndim=1] calculate_g(np.ndarray[double, ndim=3] xyz
         The inner product list, for each frame
     """
     assert xyzlist.shape[1] == 3, 'second dimension must be 3'
-    assert xyzlist.dtype == np.float64, 'this should be double precision'
     
     cdef int i, j, k
     cdef double g_i
@@ -212,9 +213,80 @@ cdef np.ndarray[np.float32_t, ndim=1] calculate_g(np.ndarray[double, ndim=3] xyz
                 
     return g
 
-cdef remove_center_of_mass(np.ndarray[double, ndim=3] xyzlist, int n_real_atoms):
+
+cpdef np.ndarray[np.float32_t, ndim=1] scalculate_g(np.ndarray[np.float32_t, ndim=3] xyzlist):
+    """Calculate the trace of each frame's inner product matrix, for the RMSD
+    calculation. This is in single.
+    
+    Parameters
+    ----------
+    xyzlist : np.ndarray, shape=(n_frames, 3, n_atoms)
+        The cartesian coordinate. They should be already centered.
+    
+    Returns
+    -------
+    g : np.ndarray, shape=(n_frames), dtype=np.float32
+        The inner product list, for each frame
+    """
+    assert xyzlist.shape[1] == 3, 'second dimension must be 3'
+    
+    cdef int i, j, k
+    cdef double g_i
+    cdef int n_frames = xyzlist.shape[0]
+    cdef int n_spatial = xyzlist.shape[1]
+    cdef int n_atoms = xyzlist.shape[2]
+
+    cdef np.ndarray[np.float32_t, ndim=1] g = np.zeros(n_frames, dtype=np.float32)
+    
+    for i in range(n_frames):
+        g_i = 0
+        for j in range(n_spatial):
+            for k in range(n_atoms):
+                g_i += xyzlist[i, j, k]*xyzlist[i, j, k]
+        g[i] = g_i
+                
+    return g
+
+
+cpdef dremove_center_of_mass(np.ndarray[double, ndim=3] xyzlist, int n_real_atoms):
     """Remove the center of mass from a set of frames declared in atom major
-    ordering (with padding atoms). Acts inplace.
+    ordering (with padding atoms). Acts inplace. This is for double precision
+    
+    Parameters
+    ----------
+    xyzlist : np.ndarray, dtype=np.float64_t, shape=(n_frames, 3, n_atoms_with_padding)
+        The cartesian coordinates of each frame, in atom major order. Because RMSD
+        requires that the number of atoms be a multiple of four, the 3rd dimension
+        can potentially be longer than the actual number of real atoms.
+    n_real_atoms : int
+        The number of actual atoms in the sytem.
+    """
+    assert xyzlist.shape[1] == 3, 'second dimension must be 3'
+    cdef int i, j
+    cdef double muX, muY, muZ
+    cdef int n_frames = xyzlist.shape[0]
+    print 'removing center of mass...'
+    for i in range(n_frames):
+        muX = 0
+        muY = 0
+        muZ = 0
+        for j in range(n_real_atoms):
+            muX += xyzlist[i, 0, j]
+            muY += xyzlist[i, 1, j]
+            muZ += xyzlist[i, 2, j]
+        muX /= n_real_atoms
+        muY /= n_real_atoms
+        muZ /= n_real_atoms
+        
+        for j in range(n_real_atoms):
+            xyzlist[i, 0, j] -= muX
+            xyzlist[i, 1, j] -= muY
+            xyzlist[i, 2, j] -= muZ
+
+cpdef sremove_center_of_mass(np.ndarray[np.float32_t, ndim=3] xyzlist, int n_real_atoms):
+    """Remove the center of mass from a set of frames declared in atom major
+    ordering (with padding atoms). Acts inplace. This is for single precision.
+    The accumulating is done in double though.
     
     Parameters
     ----------
@@ -231,9 +303,9 @@ cdef remove_center_of_mass(np.ndarray[double, ndim=3] xyzlist, int n_real_atoms)
     cdef int n_frames = xyzlist.shape[0]
     print 'removing center of mass...'
     for i in range(n_frames):
-        muX = 0
-        muY = 0
-        muZ = 0
+        muX = 0.0
+        muY = 0.0
+        muZ = 0.0
         for j in range(n_real_atoms):
             muX += xyzlist[i, 0, j]
             muY += xyzlist[i, 1, j]

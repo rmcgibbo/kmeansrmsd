@@ -54,7 +54,7 @@ def main():
                           local_swap=True, too_close_cutoff=0.0001, ignore_max_objective=True)
         centers, assignments, distances, scores, times = results
 
-    save(args.output, traj_lengths, n_real_atoms, centers, assignments, distances, scores, times)
+    save(args.output, traj_lengths, args.stride, n_real_atoms, centers, assignments, distances, scores, times)
 
 
 def log(msg, *args):
@@ -177,17 +177,17 @@ def parse_cmdline():
         sliceing and striding that is a bit of a pain to implement with the
         order format readers.''')
     output = parser.add_argument_group('output')
-    output.add_argument('-o', '--output', required=True, default='clustering.h5',
+    output.add_argument('-o', '--output', required=True, default='Data/',
         help='''path to output directory.''')
     output.add_argument('-f', '--force', default=False, action='store_true',
-        help='Overwrite the output file if it exists.')
+        help='Overwrite the output directory if it exists.')
 
     args = parser.parse_args()
     if os.path.exists(args.output):
         if args.force:
             os.unlink(args.output)
         else:
-            raise IOError('output filename %s already exists. use something different?' % args.output)
+            raise IOError('output directory %s already exists. use something different?' % args.output)
 
     log(pprint.pformat(args.__dict__))
     project_root = os.path.dirname(args.project_yaml)
@@ -201,18 +201,22 @@ def parse_cmdline():
     return args, atom_indices, project, project_root
 
 
-def reshape_for_output(array, traj_lengths):
-    output = -1 * np.ones((len(traj_lengths), np.max(traj_lengths)))
+def reshape_for_output(array, dtype, traj_lengths, stride):
+    output = np.empty((len(traj_lengths), stride*np.max(traj_lengths)), dtype)
+    output.fill(np.nan)
+
     array2 = split(array, traj_lengths)
     for i, row in enumerate(array2):
         assert len(row) == traj_lengths[i], 'reshape error'
-        output[i, 0:len(row)] = row
+        output[i, ::stride] = row
     return output
 
 
-def save(outdir, traj_lengths, n_real_atoms, centers, assignments, distances, scores, times):
-    assignments = reshape_for_output(assignments, traj_lengths)
-    distances = reshape_for_output(distances, traj_lengths)
+def save(outdir, traj_lengths, stride, n_real_atoms,
+         centers, assignments, distances, scores, times):
+
+    assignments = reshape_for_output(assignments, np.int, traj_lengths, stride)
+    distances = reshape_for_output(distances, np.float, traj_lengths, stride)
     centers = centers.swapaxes(1,2)[:, 0:n_real_atoms, :]
 
     os.makedirs(outdir)
