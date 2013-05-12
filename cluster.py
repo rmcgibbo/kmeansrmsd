@@ -7,6 +7,7 @@ import tables
 from argparse import ArgumentParser
 
 from mdtraj import io
+from msmbuilder.clustering import split
 from kmeansrmsd.medoids import _hybrid_kmedoids as medoids
 from kmeansrmsd.clustering import kmeans_mds as ckmeans_mds
 from kmeansrmsd.pyclustering import kmeans_mds as pykmeans_mds
@@ -15,7 +16,8 @@ def main():
     args, atom_indices, project, project_root = parse_cmdline()
 
     # load all of the data from disk
-    xyzlist = load_trajs(project, os.path.dirname(args.project_yaml), atom_indices, args.stride)
+    xyzlist, traj_lengths = load_trajs(project, os.path.dirname(args.project_yaml),
+                                       atom_indices, args.stride)
     n_real_atoms = len(atom_indices)
     n_padded_atoms = xyzlist.shape[2]
     assert n_padded_atoms >= n_real_atoms
@@ -29,7 +31,7 @@ def main():
 
     elif args.implementation == 'py':
         log('clustering: kmeans (py)')
-    
+
         # don't mess around with the mess that is padding atoms. just copy
         # the data into this view, and then let numpy deal with it.
         xyzlist = xyzlist.swapaxes(1,2)
@@ -52,7 +54,7 @@ def main():
                           local_swap=True, too_close_cutoff=0.0001, ignore_max_objective=True)
         centers, assignments, distances, scores, times = results
 
-    save(args.output, centers, assignments, distances, scores, times)
+    save(args.output, traj_lengths, n_real_atoms, centers, assignments, distances, scores, times)
 
 
 def log(msg, *args):
@@ -72,11 +74,11 @@ def _convert_from_lossy_integers(X, precision=1000, dtype=np.float32):
 
 def load_trajs(project, project_root, atom_indices, stride):
     """Load trajectories from the projectfile into xyzlist
-    
+
     This loads the trajectories in atom major order, and also puts in
     padding atoms (coordinates at zero) so that the number of atoms is a multiple
     of four.
-    
+
     Parameters
     ----------
     project : dict
@@ -88,7 +90,7 @@ def load_trajs(project, project_root, atom_indices, stride):
     atom_indices : np.ndarray, dtype=int
         The indices of the atoms that you want to use for the RMSD computation.
         We only load those ones.
-    
+
     Returns
     -------
     xyzlist : np.ndarray, dtype=np.float64, shape=(n_frames, 3, n_padded_atoms)
@@ -100,7 +102,7 @@ def load_trajs(project, project_root, atom_indices, stride):
         """
         return length // stride + bool(length % stride)
 
-        
+
     n_frames = sum(length_after_stride(t['length'], stride) for t in project['trajs'])
     n_real_atoms = len(atom_indices)
     # for rmsd, the number of atoms must be a multiple of four
@@ -110,16 +112,18 @@ def load_trajs(project, project_root, atom_indices, stride):
     # (it will make a single precision copy for the RMSD code itself)
     log('allocating array of size %.1f MB...', n_frames*3*n_padded_atoms*8 / (1024.0**2))
     xyzlist = np.zeros((n_frames, 3, n_padded_atoms), dtype=np.float64)
-    
+
     log('loading trajectories...')
-    n_real_atoms = len(atom_indices)
+    traj_lengths = -1*np.ones(len(project['trajs']))
+
     xyzlist_pointer = 0
-    for traj_record in project['trajs']:
+    for i, traj_record in enumerate(project['trajs']):
         path = os.path.join(project_root, traj_record['path'])
         with tables.File(path) as f:
             # xyz contains the trajectory data from this file
             # we reshape it into axis major ordering
             xyz = f.root.XYZList[::stride, atom_indices, :].swapaxes(1,2)
+            traj_lengths[i] = len(xyz)
         assert xyz.shape[1] == 3, 'not in axis major ordering'
         if xyz.dtype == np.int16:
             xyz = _convert_from_lossy_integers(xyz, dtype=np.float64)
@@ -127,9 +131,9 @@ def load_trajs(project, project_root, atom_indices, stride):
         # and accumulate the data into xyzlist
         xyzlist[xyzlist_pointer:xyzlist_pointer+len(xyz), :, 0:n_real_atoms] = xyz
         xyzlist_pointer += len(xyz)
-    
+
     assert xyzlist_pointer == len(xyzlist), 'shape error when loading stride probably?'
-    return xyzlist
+    return xyzlist, traj_lengths
 
 
 def parse_cmdline():
@@ -174,20 +178,7 @@ def parse_cmdline():
         order format readers.''')
     output = parser.add_argument_group('output')
     output.add_argument('-o', '--output', required=True, default='clustering.h5',
-        help='''path to putput file. the results will be saved as an HDF5 file
-        containing 5 tables. "centers" contains the cartesian coordinates of the
-        cluster centers (over only the atom_indices that were lodaded). "assignments"
-        contains a 1D mapping of which conformation is assigned to which center.
-        the order of the assignments file is just given by the order that the
-        trajectories were loaded, concatenated together. If you've strided the data (-s)
-        then that will be there too. TODO: in the future, we need to reshape the results
-        into the traj/frame format that msmbuilder expects. "distances" contains
-        the distance from each data point to its cluster center. the layout of the
-        array is the same as "assignments". "scores" and "times" give information
-        on the progress of the convergence of the algorithm. They give the RMS
-        cluster radius and the wall clock time (seconds since unix epoch) when
-        each round of the clustering algorithm was completed, so you can check
-        the convergence vs. elapsed wall clock time.''')
+        help='''path to output directory.''')
     output.add_argument('-f', '--force', default=False, action='store_true',
         help='Overwrite the output file if it exists.')
 
@@ -204,15 +195,39 @@ def parse_cmdline():
     log('opening project file...')
     with open(args.project_yaml) as f:
         project = yaml.load(f)
-    
+
     atom_indices = np.loadtxt(args.atom_indices, int)
-    
+
     return args, atom_indices, project, project_root
 
-def save(filename, centers, assignments, distances, scores, times):
-    log('saving results to file: %s' % filename)
-    io.saveh(filename, centers=centers, assignments=assignments,
-             distances=distances, scores=scores, times=times)
+
+def reshape_for_output(array, traj_lengths):
+    output = -1 * np.ones((len(traj_lengths), np.max(traj_lengths)))
+    array2 = split(array, traj_lengths)
+    for i, row in enumerate(array2):
+        assert len(row) == traj_lengths[i], 'reshape error'
+        output[i, 0:len(row)] = row
+    return output
+
+
+def save(outdir, traj_lengths, n_real_atoms, centers, assignments, distances, scores, times):
+    assignments = reshape_for_output(assignments, traj_lengths)
+    distances = reshape_for_output(distances, traj_lengths)
+    centers = centers.swapaxes(1,2)[:, 0:n_real_atoms, :]
+
+    os.makedirs(outdir)
+    log('saving results to %s/' % outdir)
+    io.saveh(os.path.join(outdir, 'centers.h5'), XYZList=centers)
+    io.saveh(os.path.join(outdir, 'Assignments.h5'), assignments)
+    io.saveh(os.path.join(outdir, 'Assignments.h5.distances'), distances)
+    io.saveh(os.path.join(outdir, 'convergence.h5'), scores=scores, times=times)
+
+
+
+
+    #log('saving results to file: %s' % filename)
+    #io.saveh(filename, centers=centers, assignments=assignments,
+    #         distances=distances, scores=scores, times=times)
 
 if __name__ == '__main__':
     main()
