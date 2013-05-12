@@ -172,7 +172,8 @@ def parse_cmdline():
         HDF5 format trajectories are accepted, because we use some nontrivial
         sliceing and striding that is a bit of a pain to implement with the
         order format readers.''')
-    parser.add_argument('-o', '--output', required=True, default='clustering.h5',
+    output = parser.add_argument_group('output')
+    output.add_argument('-o', '--output', required=True, default='clustering.h5',
         help='''path to putput file. the results will be saved as an HDF5 file
         containing 5 tables. "centers" contains the cartesian coordinates of the
         cluster centers (over only the atom_indices that were lodaded). "assignments"
@@ -187,10 +188,16 @@ def parse_cmdline():
         cluster radius and the wall clock time (seconds since unix epoch) when
         each round of the clustering algorithm was completed, so you can check
         the convergence vs. elapsed wall clock time.''')
+    output.add_argument('-f', '--force', default=False, action='store_true',
+        help='Overwrite the output file if it exists.')
 
     args = parser.parse_args()
     if os.path.exists(args.output):
-        raise IOError('output filename %s already exists. use something different?' % args.output)
+        if args.force:
+            os.unlink(args.output)
+        else:
+            raise IOError('output filename %s already exists. use something different?' % args.output)
+
     log(pprint.pformat(args.__dict__))
     project_root = os.path.dirname(args.project_yaml)
 
