@@ -6,6 +6,7 @@ import numpy as np
 import tables
 from argparse import ArgumentParser
 
+from mdtraj import io
 from kmeansrmsd.medoids import _hybrid_kmedoids as medoids
 from kmeansrmsd.clustering import kmeans_mds as ckmeans_mds
 from kmeansrmsd.pyclustering import kmeans_mds as pykmeans_mds
@@ -24,7 +25,7 @@ def main():
         results = ckmeans_mds(xyzlist, k=args.n_clusters, n_real_atoms=n_real_atoms,
                              max_time=args.max_time, max_iters=args.max_iters,
                              threshold=args.epsilon)
-        centers, assignments, assignment_dist, scores, times = results
+        centers, assignments, distances, scores, times = results
 
     elif args.implementation == 'py':
         log('clustering: kmeans (py)')
@@ -36,7 +37,7 @@ def main():
 
         results = pykmeans_mds(xyzlist, k=args.n_clusters, max_iters=args.max_iters,
                                max_time=args.max_time, threshold=args.epsilon)
-        centers, assignments, assignment_dist, scores, times = results
+        centers, assignments, distances, scores, times = results
 
     elif args.implementation == 'medoids':
         log('clustering: k medoids')
@@ -49,9 +50,9 @@ def main():
         ptraj = metric.TheoData(xyzlist[:, 0:n_real_atoms, :])
         results = medoids(metric, ptraj, k=args.n_clusters, num_iters=args.max_iters,
                           local_swap=True, too_close_cutoff=0.0001, ignore_max_objective=True)
-        centers, assignments, assignment_dist, scores, times = results
+        centers, assignments, distances, scores, times = results
 
-    save(centers, assignments, assignment_dist, scores, times)
+    save(args.output, centers, assignments, distances, scores, times)
 
 
 def log(msg, *args):
@@ -130,6 +131,7 @@ def load_trajs(project, project_root, atom_indices, stride):
     assert xyzlist_pointer == len(xyzlist), 'shape error when loading stride probably?'
     return xyzlist
 
+
 def parse_cmdline():
     parser = ArgumentParser('k-means RMSD clustering')
 
@@ -141,7 +143,7 @@ def parse_cmdline():
         more clusters. The running time of this algorithm is linear in the number
         of clusters.''')
 
-    convergence_group = parser.add_argument_group('convergence', '''The algorithm
+    convergence_group = parser.add_argument_group('convergence criteria', '''The algorithm
         will terminate the first time one of the convergence criteria below trips.''')
     convergence_group.add_argument('-e', '--epsilon', default=1e-8, type=float,
         help='''When the root-mean-square radius of the states (in nm) decreases
@@ -152,7 +154,11 @@ def parse_cmdline():
         help='''After this number of iterations.''')
 
     parser.add_argument('-i', '--implementation', choices=['c', 'py', 'medoids'],
-        help='''Which algorithm/implementation do you want? The .''')
+        default='c', help='''Which algorithm / implementation do you want? "c"
+        corresponds to the kmeans rmsd algorithm implemented in C; "py" corresponds
+        to the same kmeans algorithm implemented in python (useful for reference,
+        testing and performance benchmarking); and "medoids" corresponds to the
+        swap-based kmedoids algorithm from msmbuilder 2.5.''')
     parser.add_argument('-a', '--atom_indices', required=True, help='''Path to a
         plain text file listing the indices of the atoms to use for the RMSD
         calculation. The file should be zero indexed.''')
@@ -162,12 +168,29 @@ def parse_cmdline():
         increase the computation speed, at the cost of some loss in accuracy.''')
     parser.add_argument('-p', '--project_yaml', required=True, help='''Path
         to the msmbuilder project description file, in yaml format. This file
-        lists the paths to all of your trajectories on disk. Curently, only
-        the HDF5 format trajectories are accepted, because we use some nontrivial
+        lists the paths to all of your trajectories on disk. Curently, only the
+        HDF5 format trajectories are accepted, because we use some nontrivial
         sliceing and striding that is a bit of a pain to implement with the
         order format readers.''')
+    parser.add_argument('-o', '--output', required=True, default='clustering.h5',
+        help='''path to putput file. the results will be saved as an HDF5 file
+        containing 5 tables. "centers" contains the cartesian coordinates of the
+        cluster centers (over only the atom_indices that were lodaded). "assignments"
+        contains a 1D mapping of which conformation is assigned to which center.
+        the order of the assignments file is just given by the order that the
+        trajectories were loaded, concatenated together. If you've strided the data (-s)
+        then that will be there too. TODO: in the future, we need to reshape the results
+        into the traj/frame format that msmbuilder expects. "distances" contains
+        the distance from each data point to its cluster center. the layout of the
+        array is the same as "assignments". "scores" and "times" give information
+        on the progress of the convergence of the algorithm. They give the RMS
+        cluster radius and the wall clock time (seconds since unix epoch) when
+        each round of the clustering algorithm was completed, so you can check
+        the convergence vs. elapsed wall clock time.''')
 
     args = parser.parse_args()
+    if os.path.exists(args.output):
+        raise IOError('output filename %s already exists. use something different?' % args.output)
     log(pprint.pformat(args.__dict__))
     project_root = os.path.dirname(args.project_yaml)
 
@@ -179,9 +202,10 @@ def parse_cmdline():
     
     return args, atom_indices, project, project_root
 
-def save(centers, assignments, assignment_dist, scores, times):
-    pass
-
+def save(filename, centers, assignments, distances, scores, times):
+    log('saving results to file: %s' % filename)
+    io.saveh(filename, centers=centers, assignments=assignments,
+             distances=distances, scores=scores, times=times)
 
 if __name__ == '__main__':
     main()

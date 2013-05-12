@@ -43,15 +43,52 @@ cdef extern from "kmeans_rmsd_subroutines.h":
 ##############################################################################
 
 def kmeans_mds(np.ndarray[double, ndim=3] xyzlist, int n_real_atoms, int k, max_iters=10, max_time=None, threshold=1e-8):
-    """k-means clustering with the RMSD distance metric.
+    """k-means clustering with RMSD
 
-    this is an iterative algorithm. during each iteration we first move each cluster center to
-    the empirical average of the conformations currently assigned to it, and then we re-assign
-    all of the conformations given the new locations of the centers.
+    This algorithm uses a multidimensional scaling approach to "average" conformations
+    for the kmeans update step. This iterative algorithm will finish when the
+    first of the three possible convergence criteria is met.
 
-    to compute the average conformations, we use a form of classical multidimensional
-    scaling / principle coordinate analysis.
+    Parameters
+    ----------
+    xyzlist : np.ndarray, dtype=double, shape=(n_frames, 3, n_padded_atoms)
+        The cartesian coordinates, in double precision, laid out in axis-major
+        order. The number of atoms should be a multiple of four, with "padding"
+        atoms inserted at (0,0,0) to get up to the next multiple of four if you
+        have fewer.
+    n_real_atoms : int
+        The actual number of atoms you have, (i.e. without the padding atoms)
+    k : int
+        The number of clusters you'd like
+    max_iters : int
+        Convergence criteria. quit when this many iterations have been run.
+    max_time : float
+        Convergence criteria. quit when the elapsed time has exceeds this amount,
+        in seconds.
+    threshold : float
+        convergence crieria. quit when the change in the RMS cluster radius in
+        a round is less than this value.
+
+    Returns
+    -------
+    centers : np.ndarray, shape=(n_frames, 3, n_padded_atoms)
+        The cartesian coordinates of the cluster centers. Obviously these will
+        only include the atoms that were used as input in xyzlist. Padding
+        atoms will still be present.
+    assignments : np.ndarray, shape=(n_frames,) dtype=long
+        contains a 1D mapping of which conformation from xyzlist are
+        assigned to which center.
+    distances : np.ndarray, shape=(n_frames,) dtype=float
+        contains the distance from each data point to its cluster center
+    scores : np.ndarray, shape=(n_rounds,), dtyoe=float
+        The RMS cluster radius at each iteration of the algorithm. Gives
+        a sense of how quickly the algorithm was converging.
+    times : np.ndarray, shape=(n_rounds,), dtype=float give information
+        The wall clock time (seconds since unix epoch) when each round of the
+        clustering algorithm was completed, so you can check the convergence
+        vs. elapsed wall clock time.
     """
+
     assert xyzlist.shape[1] == 3, 'xyzlist must be n_frames, 3, n_atoms'
     assert xyzlist.shape[2] % 4 == 0, 'number of atoms must be a multiple of four. you can pad with zeros to get up to that.'
 
