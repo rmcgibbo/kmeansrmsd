@@ -19,4 +19,4 @@ def test_kmeans():
     centers, assignments, distances, scores, times = kmeans_mds(dataset, k=10)
     print assignments
 
-test_kmeans()
+#test_kmeans()

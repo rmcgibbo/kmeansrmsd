@@ -63,7 +63,7 @@ inline double ddet(double* A) {
          - A[2]*A[4]*A[6] - A[5]*A[7]*A[0] - A[8]*A[1]*A[3];
 }
 
-int center_inplace(double* X, int X_dim0, int X_dim1) {
+int center_inplace(double* X, int X_dim0, int X_dim1, int X_dim1_mem) {
     // Center a conformation in place
     // 
     // Parameters
@@ -74,6 +74,9 @@ int center_inplace(double* X, int X_dim0, int X_dim1) {
     //     number of rows of X. Should be 3
     // X_dim1 : int
     //     number of columns of X. Corresponds to the number of atoms
+    // X_dim1_mem : int
+    //     number of columns of X in memory. corresponds to the number of padded atoms.
+    //     such that the (i,j)-th element of X is accessed at X[i*X_dim1*mem + j]
     
     if (X_dim0 != 3) {
         fprintf(stderr, "X_dim0 is not 3\n");
@@ -84,18 +87,18 @@ int center_inplace(double* X, int X_dim0, int X_dim1) {
     for (j = 0; j < X_dim0; j++) {
         double mu  = 0;
         for (i = 0; i < X_dim1; i++) {
-            mu += X[j*X_dim1 + i] / X_dim1;
+            mu += X[j*X_dim1_mem + i] / X_dim1;
         }
 
         for (i = 0; i < X_dim1; i++) {
-            X[j*X_dim1 + i] -= mu;
+            X[j*X_dim1_mem + i] -= mu;
         }
     }
     return 0;
 }
 
-int rectify_mirror(double* X, int X_dim0, int X_dim1,
-                   double* Y, int Y_dim0, int Y_dim1) {
+int rectify_mirror(double* X, int X_dim0, int X_dim1, int X_dim1_mem,
+                   double* Y, int Y_dim0, int Y_dim1, int Y_dim1_mem) {
     // Swap the direction of the axes in a conformation so that its optimal
     // alignment with respect to a second frame involves no mirror inversion
     // 
@@ -115,32 +118,38 @@ int rectify_mirror(double* X, int X_dim0, int X_dim1,
     //    The number of rows in matrix X. Should be 3.
     // X_dim1 : int
     //    The number of columns in matrix X. Corresponds to the number of atoms
+    // X_dim1_mem : int
+    //     number of columns of X in memory. corresponds to the number of padded atoms.
+    //     such that the (i,j)-th element of X is accessed at X[i*X_dim1*mem + j]
     // Y : double*, shape=(X_dim0, X_dim1)
     //    Pointer to the upper left corner of matrix X. This is the "reference"
     //    conformation.
     // Y_dim0 : int
     //    The number of rows in matrix Y. Should be 3.
     // Y_dim1 : int
-    //    The number of columns in matrix Y. Corresponds to the number of atoms/
+    //    The number of columns in matrix Y. Corresponds to the number of atoms.
+    // Y_dim1_mem : int
+    //     number of columns of Y in memory. corresponds to the number of padded atoms.
+    //     such that the (i,j)-th element of Y is accessed at Y[i*Y_dim1*mem + j]
 
     if ((X_dim0 != 3) || (Y_dim0 != 3)) {
         fprintf(stderr, "rectify_mirror called with incorrect shape\n");
         exit(1);
     }
     
-    center_inplace(X, X_dim0, X_dim1);
-    //center_inplace(Y, Y_dim0, Y_dim1);
+    center_inplace(X, X_dim0, X_dim1, X_dim1_mem);
+    //center_inplace(Y, Y_dim0, Y_dim1, Y_dim1_mem);
 
     int i, j;
     i = 0;
-    while ((i < 2) && is_mirror_image(X, X_dim0, X_dim1, Y, Y_dim0, Y_dim1)) {
+    while ((i < 2) && is_mirror_image(X, X_dim0, X_dim1, X_dim1_mem, Y, Y_dim0, Y_dim1, Y_dim1_mem)) {
         for (j = 0; j < X_dim1; j++) {
             X[i*X_dim1 + j] *= -1;
         }
         i++;
     }
     
-    if (is_mirror_image(X, X_dim0, X_dim1, Y, Y_dim0, Y_dim1)) {
+    if (is_mirror_image(X, X_dim0, X_dim1, X_dim1_mem, Y, Y_dim0, Y_dim1, Y_dim1_mem)) {
         fprintf(stderr, "It should NOT be a mirror image now\n");
         exit(1);
     }
@@ -149,7 +158,8 @@ int rectify_mirror(double* X, int X_dim0, int X_dim1,
 }
 
 
-int is_mirror_image(double* X, int X_dim0, int X_dim1, double* Y, int Y_dim0, int Y_dim1) {
+int is_mirror_image(double* X, int X_dim0, int X_dim1, int X_dim1_mem,
+                    double* Y, int Y_dim0, int Y_dim1, int Y_dim1_mem) {
     // Check if two configurations X and Y are mirror images
     // (i.e. does their optimal superposition involve a reflection?)
     // 
@@ -161,13 +171,19 @@ int is_mirror_image(double* X, int X_dim0, int X_dim1, double* Y, int Y_dim0, in
     //    The number of rows in matrix X. Should be 3.
     // X_dim1 : int
     //    The number of columns in matrix X. Corresponds to number of atoms
+    // X_dim1_mem : int
+    //     number of columns of X in memory. corresponds to the number of padded atoms.
+    //     such that the (i,j)-th element of X is accessed at X[i*X_dim1*mem + j]
     // Y : double*, shape=(X_dim0, X_dim1)
     //    Pointer to the upper left corner of matrix X.
     // Y_dim0 : int
     //    The number of rows in matrix Y. Should be 3.
     // Y_dim1 : int
     //    The number of columns in matrix Y. Corresponds to number of atoms
-    // 
+    // Y_dim1_mem : int
+    //     number of columns of Y in memory. corresponds to the number of padded atoms.
+    //     such that the (i,j)-th element of Y is accessed at Y[i*Y_dim1*mem + j]    // 
+    //
     // Returns
     // -------
     // mirror : int
@@ -181,8 +197,8 @@ int is_mirror_image(double* X, int X_dim0, int X_dim1, double* Y, int Y_dim0, in
     
     // covariance = np.dot(X, Y.T)
     gsl_matrix* covariance = gsl_matrix_alloc(3, 3);
-    gsl_matrix_view mX = gsl_matrix_view_array(X, X_dim0, X_dim1);
-    gsl_matrix_view mY = gsl_matrix_view_array(Y, X_dim0, X_dim1);
+    gsl_matrix_view mX = gsl_matrix_view_array_with_tda(X, X_dim0, X_dim1, X_dim1_mem);
+    gsl_matrix_view mY = gsl_matrix_view_array_with_tda(Y, Y_dim0, Y_dim1, Y_dim1_mem);
     
     gsl_blas_dgemm(CblasNoTrans, CblasTrans, 1.0, &mX.matrix, &mY.matrix, 0.0, covariance);
     
@@ -202,7 +218,7 @@ int is_mirror_image(double* X, int X_dim0, int X_dim1, double* Y, int Y_dim0, in
 }
 
 
-int gower_matrix(double* X, int X_dim0, int X_dim1, int X_dim2,
+int gower_matrix(double* X, int X_dim0, int X_dim1, int X_dim2, int X_dim2_mem,
                  long* assignments, int assignments_dim0, long k,
                  double* B, int B_dim0, int B_dim1) {
     // Compute the Gower matrix over an ensemble of conformations.
@@ -218,6 +234,15 @@ int gower_matrix(double* X, int X_dim0, int X_dim1, int X_dim2,
     // ----------
     // X : double*, shape=(X_dim0, X_dim1, X_dim2)
     //     The centered cartesian coordinates
+    // X_dim0 : int
+    //     number of rows of X. Corresponds to the number of frames.
+    // X_dim1 : int
+    //     number of columns of X. This should be 3.
+    // X_dim2_mem : int
+    //     If the array on disk has "padded" atoms, then X_dim2_mem should be
+    //     the number of atoms with padding. This is important because we
+    //     need to skip over the right number of frames to find the n-th
+    //     conformation on disk.
     // assignments : long*, shape=(assignments_dim0)
     //     The assignments for each frame.
     // k : long
@@ -253,6 +278,7 @@ int gower_matrix(double* X, int X_dim0, int X_dim1, int X_dim2,
         }
     }
     if (n_assignments <= 0) {
+        fprintf(stderr, "no assignements (gower)\n");
         return -1;
     }
     mB = gsl_matrix_view_array(B, B_dim0, B_dim1);
@@ -262,7 +288,11 @@ int gower_matrix(double* X, int X_dim0, int X_dim1, int X_dim2,
             continue;
         }
         
-        mA = gsl_matrix_view_array(&X[p*X_dim1*X_dim2], X_dim1, X_dim2);
+        mA = gsl_matrix_view_array_with_tda(&X[p*X_dim1*X_dim2_mem], X_dim1, X_dim2, X_dim2_mem);
+        // for (j = 0; j < X_dim2; j++) {
+            // printf("%f", gsl_matrix_get(&mA.matrix, 0, j));
+        // }
+        
         // B += (1/n_frames) X.T[i] * X[i]
         gsl_blas_dgemm(CblasTrans, CblasNoTrans, 1.0 / n_assignments,
             &mA.matrix, &mA.matrix, 1.0, &mB.matrix);
@@ -295,9 +325,9 @@ int gower_matrix(double* X, int X_dim0, int X_dim1, int X_dim2,
 }
 
 
-int average_structure(double* X, int X_dim0, int X_dim1, int X_dim2,
+int average_structure(double* X, int X_dim0, int X_dim1, int X_dim2, int X_dim2_mem,
                       long* assignments, int assignments_dim0, long k,
-                      double* R, int R_dim0, int R_dim1) {
+                      double* R, int R_dim0, int R_dim1, int R_dim1_mem) {
     // Compute an "average conformation" from amongst the conformations
     // in xyzlist[assignments==k]
     // 
@@ -312,6 +342,11 @@ int average_structure(double* X, int X_dim0, int X_dim1, int X_dim2,
     //     number of columns of X. This should be 3.
     // X_dim2 : int
     //     size of the third dimension of X. Corresponds to the number of atoms.
+    // X_dim2_mem : int
+    //     If the array on disk has "padded" atoms, then X_dim2_mem should be
+    //     the number of atoms with padding. This is important because we
+    //     need to skip over the right number of frames to find the n-th
+    //     conformation on disk.
     // assignments : long*
     //     pointer to the beginning of the assignments vector, which contains
     //     the index of the "state" that each conformation is assigned to.
@@ -330,7 +365,15 @@ int average_structure(double* X, int X_dim0, int X_dim1, int X_dim2,
     //     number of columns of R. corresponds to the number of atoms
     
     if ((X_dim1 != R_dim0) || (X_dim2 != R_dim1) || (X_dim1 != 3)){
+        fprintf(stderr, "X_dim1 %d\n", X_dim1);
+        fprintf(stderr, "R_dim0 %d\n", R_dim0);
+        fprintf(stderr, "X_dim2 %d\n", X_dim2);   
+        fprintf(stderr, "R_dim1 %d\n", R_dim1);
         fprintf(stderr, "average_structure called with wrong shape\n");
+        exit(1);
+    }
+    if (X_dim2_mem <= X_dim2) {
+        fprintf(stderr, "x_dim2_mem must be greater than or equal to X_dim2");
         exit(1);
     }
     
@@ -339,14 +382,16 @@ int average_structure(double* X, int X_dim0, int X_dim1, int X_dim2,
     double B[X_dim2*X_dim2];
     memset(B, 0, sizeof(double)*X_dim2*X_dim2);
     
-    status = gower_matrix(X, X_dim0, X_dim1, X_dim2, assignments, assignments_dim0, k,
+    status = gower_matrix(X, X_dim0, X_dim1, X_dim2, X_dim2_mem, assignments, assignments_dim0, k,
                           B, X_dim2, X_dim2);
     
     if (status == -1) {
         int new_seed = rand() % X_dim0;
         fprintf(stderr, "Warning: No assignments for state %ld\n", k);
         fprintf(stderr, "Choosing new seed structure: %d\n", new_seed);
-        memcpy(R, &X[new_seed*X_dim1*X_dim2], X_dim1*X_dim2*sizeof(double));
+        memcpy(R, &X[new_seed*X_dim1*X_dim2_mem], X_dim2*sizeof(double));
+        memcpy(R + X_dim2_mem, &X[new_seed*X_dim1*X_dim2_mem + X_dim2_mem], X_dim2*sizeof(double));
+        memcpy(R + 2*X_dim2_mem, &X[new_seed*X_dim1*X_dim2_mem + 2*X_dim2_mem], X_dim2*sizeof(double));
         return 0;
     }
 
@@ -370,11 +415,11 @@ int average_structure(double* X, int X_dim0, int X_dim1, int X_dim2,
         gsl_vector_scale(&column.vector, sqrt(gsl_vector_get(eval, i)));
     }
     
-    gsl_matrix_view output = gsl_matrix_view_array(R, R_dim0, R_dim1);
+    gsl_matrix_view output = gsl_matrix_view_array_with_tda(R, R_dim0, R_dim1, R_dim1_mem);
     gsl_matrix_view submatrix = gsl_matrix_submatrix(evec, 0, 0, X_dim2, 3);
     gsl_matrix_transpose_memcpy(&output.matrix, &submatrix.matrix);
 
-    rectify_mirror(R, R_dim0, R_dim1, &X[status*X_dim1*X_dim2], X_dim1, X_dim2);
+    rectify_mirror(R, R_dim0, R_dim1, R_dim1_mem, &X[status*X_dim1*X_dim2_mem], X_dim1, X_dim2, X_dim2_mem);
 
     gsl_vector_free(eval);
     gsl_matrix_free(evec);
