@@ -99,10 +99,25 @@ def detect_gsl():
         return False
         
     return True
-    
-extensions = []
 
+def check_python_dependencies(*packages):
+    for p in packages:
+        try:
+            __import__(p)
+        except ImportError:
+            print '\033[91m#####################################################'
+            print "ERROR: This package requires the python package"
+            print "'%s'" % p
+            print '#####################################################\033[0m'
+            sys.exit(1)
+
+
+check_python_dependencies('mdtraj', 'msmbuilder', 'tables', 'yaml', 'sklearn', 'scipy')
+
+
+extensions = []
 if detect_gsl():
+    # only compile the cython extension code if they have the GSL
     extensions.append(Extension(
         "kmeansrmsd.clustering",
         sources=["KMeansRMSD/clustering.pyx", "KMeansRMSD/kmeans_rmsd_subroutines.c"],
@@ -122,7 +137,20 @@ if detect_gsl():
 
 setup(
     name='kmeansrmsd',
+    version='0.2',
     packages={'kmeansrmsd': 'KMeansRMSD'},
     cmdclass = {'build_ext': build_ext},
-    ext_modules = extensions
+    ext_modules = extensions,
+
+    description='Protein conformational clustering with RMSD by K-Means',
+    author='Robert McGibbon',
+    author_email='rmcgibbo@gmail.com',
+    license='GPL3',
+    classifiers=['Development Status :: 3 - Alpha',
+        'Intended Audience :: Developers',
+        'Intended Audience :: Science/Research',
+        'License :: OSI Approved :: GNU General Public License v3 (GPLv3)'
+        'Operating System :: POSIX'
+        'Topic :: Scientific/Engineering :: Chemistry',
+        'Topic :: Software Development :: Libraries :: Python Modules'],
 )
