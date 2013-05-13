@@ -124,9 +124,11 @@ def kmeans_mds(np.ndarray[double, ndim=3] xyzlist, int n_real_atoms, int k, max_
 
     scores = [np.inf]
     times = [time.time()]
-    
+
+    print 'starting main loop...'
     for n in itertools.count():
         # recenter each cluster based on its current members
+        print 'centering...'
         for i in prange(k, nogil=True):
             average_structure(&xyzlist[0,0,0], xyzlist.shape[0], xyzlist.shape[1], n_real_atoms, n_padded_atoms,
                &assignments[0], assignments.shape[0], i,
@@ -138,7 +140,8 @@ def kmeans_mds(np.ndarray[double, ndim=3] xyzlist, int n_real_atoms, int k, max_
         centers_float = np.asarray(centers, dtype=np.float32)
 
         # reassign all of the data
-        assignment_dist[:] = float32_max
+        assignment_dist.fill(float32_max)
+        print 'assigning...'
         for i in range(k):
             d = IRMSD.rmsd_one_to_all(centers_float, xyzlist_float, centers_g, xyzlist_g, n_real_atoms, i)
             where = d < assignment_dist
