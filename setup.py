@@ -28,9 +28,17 @@ from distutils.core import setup
 import numpy as np
 from numpy.distutils.system_info import get_info
 
+###############################################################################
+# Globals
+##############################################################################
+
+__version__ = '0.2'
+
 ##############################################################################
 # Code
 ##############################################################################
+
+
 
 def hasfunction(cc, funcname):
     """Check to see if the compiler/linker supports a certain function
@@ -137,8 +145,9 @@ if detect_gsl():
 
 setup(
     name='kmeansrmsd',
-    version='0.2',
-    packages={'kmeansrmsd': 'KMeansRMSD'},
+    version=__version__,
+    packages=['kmeansrmsd',],
+    package_dir={'kmeansrmsd':'KMeansRMSD'},
     cmdclass = {'build_ext': build_ext},
     ext_modules = extensions,
 
