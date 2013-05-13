@@ -27,15 +27,17 @@ from distutils.core import setup
 import numpy as np
 from numpy.distutils.system_info import get_info
 
-##############################################################################
-# globals
+###############################################################################
+# Globals
 ##############################################################################
 
+__version__ = '0.2'
 lib_dirs = []
 inc_dirs = ['KMeansRMSD', np.get_include()]
 default_header_dirs = []
 default_library_dirs = None
 default_runtime_dirs = None
+
 
 ##############################################################################
 # Utilities
@@ -185,6 +187,7 @@ class PosixPackage(Package):
     _component_dirs = ['include', 'lib']
 _Package = PosixPackage
 
+
 ##############################################################################
 # script
 ##############################################################################
@@ -312,8 +315,9 @@ if gsl_package.found:
 check_python_dependencies('mdtraj', 'msmbuilder', 'tables', 'yaml', 'sklearn', 'scipy')
 setup(
     name='kmeansrmsd',
-    version='0.2',
-    packages={'kmeansrmsd': 'KMeansRMSD'},
+    version=__version__,
+    packages=['kmeansrmsd',],
+    package_dir={'kmeansrmsd':'KMeansRMSD'},
     cmdclass = {'build_ext': build_ext},
     ext_modules = extensions,
 
