@@ -18,6 +18,7 @@ RMSD KMeans clustering. Command line script. (run with -h for details)
 ##############################################################################
 
 import os
+import warnings
 import pprint
 import yaml
 import numpy as np
@@ -47,6 +48,7 @@ def main():
     # load all of the data from disk
     xyzlist, traj_lengths = load_trajs(project, os.path.dirname(args.project_yaml),
                                        atom_indices, args.stride)
+
     n_real_atoms = len(atom_indices)
     n_padded_atoms = xyzlist.shape[2]
     assert n_padded_atoms >= n_real_atoms
@@ -131,8 +133,9 @@ def load_trajs(project, project_root, atom_indices, stride):
         """
         return length // stride + bool(length % stride)
 
+    trajs = [t for t in project['trajs'] if t['errors'] is None]
 
-    n_frames = sum(length_after_stride(t['length'], stride) for t in project['trajs'])
+    n_frames = sum(length_after_stride(t['length'], stride) for t in trajs)
     n_real_atoms = len(atom_indices)
     # for rmsd, the number of atoms must be a multiple of four
     n_padded_atoms = 4 + n_real_atoms - n_real_atoms % 4
@@ -143,19 +146,26 @@ def load_trajs(project, project_root, atom_indices, stride):
     xyzlist = np.zeros((n_frames, 3, n_padded_atoms), dtype=np.float64)
 
     log('loading trajectories...')
-    traj_lengths = -1*np.ones(len(project['trajs']))
+    traj_lengths = np.empty(len(trajs), dtype=np.int)
+    traj_lengths.fill(-1)
 
     xyzlist_pointer = 0
-    for i, traj_record in enumerate(project['trajs']):
+    for i, traj_record in enumerate(trajs):
         path = os.path.join(project_root, traj_record['path'])
         with tables.File(path) as f:
             # xyz contains the trajectory data from this file
             # we reshape it into axis major ordering
             xyz = f.root.XYZList[::stride, atom_indices, :].swapaxes(1,2)
             traj_lengths[i] = len(xyz)
+
         assert xyz.shape[1] == 3, 'not in axis major ordering'
         if xyz.dtype == np.int16:
             xyz = _convert_from_lossy_integers(xyz, dtype=np.float64)
+
+        if np.any(np.logical_or(np.isinf(xyz), np.isnan(xyz))):
+            raise ValueError('There are infs or nans in the trajectory loaded from %s' % path)
+        if np.max(np.abs(xyz)) > 32:
+            warnings.warn('max coordinate (%f) in %s is greater than 32nm from origin. methinks something is wrong?' % (np.max(xyz), path))
 
         # and accumulate the data into xyzlist
         xyzlist[xyzlist_pointer:xyzlist_pointer+len(xyz), :, 0:n_real_atoms] = xyz

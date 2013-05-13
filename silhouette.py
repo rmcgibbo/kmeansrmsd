@@ -126,9 +126,10 @@ def load_trajs(project, project_root, atom_indices, stride, fraction):
     xyzlist : np.ndarray, dtype=np.float64, shape=(n_frames, 3, n_padded_atoms)
         The coordinates of all of the atoms.
     """
+    trajs = [t for t in project['trajs'] if t['errors'] is None]
 
     # these are the indices to take from each traj based on striding
-    which_frames = [range(t['length'])[::stride] for t in project['trajs']]
+    which_frames = [range(t['length'])[::stride] for t in trajs]
 
     # now further reduce the amount by taking a random sampling of them.
     sampled_frames = [np.random.permutation(w)[:int(len(w)*fraction)] for w in which_frames]
@@ -146,7 +147,7 @@ def load_trajs(project, project_root, atom_indices, stride, fraction):
     log('loading trajectories...')
 
     xyzlist_pointer = 0
-    for i, traj_record in enumerate(project['trajs']):
+    for i, traj_record in enumerate(trajs):
         path = os.path.join(project_root, traj_record['path'])
         with tables.File(path) as f:
             # xyz contains the trajectory data from this file
@@ -155,8 +156,14 @@ def load_trajs(project, project_root, atom_indices, stride, fraction):
             xyz = xyz[:, atom_indices, :].swapaxes(1, 2)
 
         assert xyz.shape[1] == 3, 'not in axis major ordering'
+
         if xyz.dtype == np.int16:
             xyz = _convert_from_lossy_integers(xyz, dtype=np.float32)
+
+        if np.any(np.logical_or(np.isinf(xyz), np.isnan(xyz))):
+            raise ValueError('There are infs or nans in the trajectory loaded from %s' % path)
+        if np.max(np.abs(xyz)) > 32:
+            warnings.warn('max coordinate (%f) in %s is greater than 32nm from origin. methinks something is wrong?' % (np.max(xyz), path))
 
         # and accumulate the data into xyzlist
         xyzlist[xyzlist_pointer:xyzlist_pointer+len(xyz), :, 0:n_real_atoms] = xyz
