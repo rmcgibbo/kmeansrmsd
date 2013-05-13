@@ -289,7 +289,7 @@ for package, location in [(gsl_package, GSL_DIR), (gslcblas_package, GSL_DIR)]:
 ##############################################################################
 
 extensions = []
-if gsl_package.found:
+if gsl_package.found and gslcblas_package.found:
     # only compile the cython extension code if they have the GSL
     extensions.append(Extension(
         "kmeansrmsd.clustering",
