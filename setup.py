@@ -247,13 +247,17 @@ for package, location in [(gsl_package, GSL_DIR), (gslcblas_package, GSL_DIR)]:
     (hdrdir, libdir, rundir) = package.find_directories(location)
 
     if not libdir and package.target_function:
-        compiler.add_library(package.library_name)
-        libdir = compiler.has_function(package.target_function)
+        libdir = compiler.has_function(package.target_function, libraries=(package.library_name,))
 
     if not (hdrdir and libdir):
-        print("* Could not find %s headers and library; "
-              "disabling support for it." % package.name)
+        print_warning("* Could not find %s headers and library; " % package.name,
+              "disabling support for it. You may need to explicitly state "
+              "where your local %s headers and library can be found "
+              "by setting the ``%s_DIR`` environment variable "
+              "or by using the ``--%s`` command-line option." %
+              (package.name, package.tag, package.tag.lower()))
         package.found = False
+        continue
 
     if libdir in ("", True):
         print("* Found %s headers at ``%s``, the library is located in the "
