@@ -251,7 +251,7 @@ def reshape_for_output(array, dtype, traj_lengths, stride):
     array2 = split(array, traj_lengths)
     for i, row in enumerate(array2):
         assert len(row) == traj_lengths[i], 'reshape error'
-        output[i, ::stride] = row
+        output[i, :len(row)*stride:stride] = row
     return output
 
 
@@ -260,14 +260,17 @@ def save(outdir, traj_lengths, stride, n_real_atoms,
 
     assignments = reshape_for_output(assignments, np.int, traj_lengths, stride)
     distances = reshape_for_output(distances, np.float, traj_lengths, stride)
-    centers = centers.swapaxes(1,2)[:, 0:n_real_atoms, :]
+
+    centers = centers.swapaxes(1,2)
+    centers = centers[:, 0:n_real_atoms, :]
 
     os.makedirs(outdir)
     log('saving results to %s/' % outdir)
     io.saveh(os.path.join(outdir, 'centers.h5'), XYZList=centers)
     io.saveh(os.path.join(outdir, 'Assignments.h5'), assignments)
     io.saveh(os.path.join(outdir, 'Assignments.h5.distances'), distances)
-    io.saveh(os.path.join(outdir, 'convergence.h5'), scores=scores, times=times)
+    if len(scores) > 0 and len(times) > 0:
+        io.saveh(os.path.join(outdir, 'convergence.h5'), scores=scores, times=times)
 
 
 if __name__ == '__main__':

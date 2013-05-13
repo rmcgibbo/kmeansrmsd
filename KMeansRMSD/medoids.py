@@ -231,4 +231,4 @@ def _hybrid_kmedoids(metric, ptraj, k=None, distance_cutoff=None, num_iters=10, 
             scores.append(obj_func)
             times.append(time.time())
 
-    return medoids, assignments, distance_to_current, np.array(scores), np.array(times)
+    return ptraj.XYZData[medoids], assignments, distance_to_current, np.array(scores), np.array(times)
