@@ -1,6 +1,24 @@
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+"""
+RMSD KMeans clustering. Command line script. (run with -h for details)
+"""
+##############################################################################
+# Imports
+##############################################################################
+
 import os
 import pprint
-import sys
 import yaml
 import numpy as np
 import tables
@@ -9,8 +27,19 @@ from argparse import ArgumentParser
 from mdtraj import io
 from msmbuilder.clustering import split
 from kmeansrmsd.medoids import _hybrid_kmedoids as medoids
-from kmeansrmsd.clustering import kmeans_mds as ckmeans_mds
 from kmeansrmsd.pyclustering import kmeans_mds as pykmeans_mds
+
+try:
+    from kmeansrmsd.clustering import kmeans_mds as ckmeans_mds
+    HAVE_C_CODE = True
+except ImportError:
+    ckmeans_mds = lambda *args: log("C implementation is not available")
+    HAVE_C_CODE = False
+
+
+##############################################################################
+# Functions
+##############################################################################
 
 def main():
     args, atom_indices, project, project_root = parse_cmdline()
@@ -157,7 +186,11 @@ def parse_cmdline():
     convergence_group.add_argument('-n', '--max_iters', default=100, type=int,
         help='''After this number of iterations.''')
 
-    parser.add_argument('-i', '--implementation', choices=['c', 'py', 'medoids'],
+    implementation_choices = ['py', 'medoids']
+    if HAVE_C_CODE:
+        implementation_choices.append('c')
+            
+    parser.add_argument('-i', '--implementation', choices=implementation_choices,
         default='c', help='''Which algorithm / implementation do you want? "c"
         corresponds to the kmeans rmsd algorithm implemented in C; "py" corresponds
         to the same kmeans algorithm implemented in python (useful for reference,
@@ -226,12 +259,6 @@ def save(outdir, traj_lengths, stride, n_real_atoms,
     io.saveh(os.path.join(outdir, 'Assignments.h5.distances'), distances)
     io.saveh(os.path.join(outdir, 'convergence.h5'), scores=scores, times=times)
 
-
-
-
-    #log('saving results to file: %s' % filename)
-    #io.saveh(filename, centers=centers, assignments=assignments,
-    #         distances=distances, scores=scores, times=times)
 
 if __name__ == '__main__':
     main()

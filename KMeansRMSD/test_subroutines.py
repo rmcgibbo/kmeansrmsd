@@ -22,13 +22,20 @@ in cython files, so we wrap them up here in a test generator.
 ###############################################################
 
 import sys
-from kmeansrmsd import kmeans_rmsd_subroutines_tests
+try:
+    from kmeansrmsd import kmeans_rmsd_subroutines_tests
+    HAVE_C_CODE = True
+except:
+    HAVE_C_CODE = False
 
 ###############################################################
 # tests
 ###############################################################
 
 def test_all_builtins():
+    if not HAVE_C_CODE:
+        return
+        
     for name in dir(kmeans_rmsd_subroutines_tests):
         # grab every name from kmeans_rmsd_subroutines_tests that looks
         # like it might be a test function

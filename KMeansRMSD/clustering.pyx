@@ -23,7 +23,6 @@ import time
 import itertools
 import numpy as np
 
-from kmeansrmsd.test import _average_structure
 from mdtraj import IRMSD
 from mdtraj.geometry import rmsd
 
