@@ -47,7 +47,7 @@ def main():
 
     # make sure we didn't mess up the subsampling and get nonsense data
     assert not np.any(assignments < 0), 'assignments negative? stride/sampling messed up probs. did you use a different strid than you clustered with?'
-    assert np.all(np.unique(assignments) == np.arange(np.max(assignments)+1)), 'assignments dont go from 0 to max. did you use a different strid than you clustered with?'
+    #assert np.all(np.unique(assignments) == np.arange(np.max(assignments)+1)), 'assignments dont go from 0 to max. did you use a different strid than you clustered with?'
 
     n_real_atoms = len(atom_indices)
     n_padded_atoms = xyzlist.shape[2]
