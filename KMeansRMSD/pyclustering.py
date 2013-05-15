@@ -209,12 +209,13 @@ def average_structure(X):
     v = np.take(v, indices, 0)
     U = np.take(U, indices, 1)
        
-    x = U * np.sqrt(v)
+    result = U * np.sqrt(v)
     i = 0
-    while is_mirror_image(x, X[0]) and i < 2:
-        x[:, i] *= -1
+    while is_mirror_image(result, X[0]) and i < 2:
+        result[:, i] *= -1
         i += 1
-    return x
+
+    return result
 
             
 def is_mirror_image(X, Y):
