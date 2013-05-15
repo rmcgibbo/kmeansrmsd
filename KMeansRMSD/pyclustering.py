@@ -33,13 +33,15 @@ from mdtraj import IRMSD
 from mdtraj.geometry import rmsd
 from mdtraj.utils.arrays import ensure_type
 
+from mdtraj.geometry.alignment import rmsd_kabsch  # debug
+
 __all__ = ['kmeans_mds']
 
 ###############################################################
 # Functions
 ###############################################################
 
-def kmeans_mds(xyzlist, k=10, max_iters=100, max_time=10, threshold=1e-8):
+def kmeans_mds(xyzlist, k=10, max_iters=100, max_time=10, threshold=1e-8, nearest_medoid=False):
     """k-means clustering with the RMSD distance metric.
 
     this is an iterative algorithm. during each iteration we first move each cluster center to
@@ -90,10 +92,26 @@ def kmeans_mds(xyzlist, k=10, max_iters=100, max_time=10, threshold=1e-8):
                 print 'don\'t worry. but if it keeps up repeatedly, something is wrong)'
                 new_center = xyzlist[np.random.randint(len(xyzlist))]
             else:
-                new_center = average_structure(structures)
-            new_center -= new_center.mean(0)  # make sure the centers are always centered
+                medoid = average_structure(structures)
+                medoid -= medoid.mean(0)
+                if nearest_medoid:
+                    # instead of actually using the raw MDS average structure, we choose
+                    # the data point in xyzlist[assignments == i, :, :] that is closest,
+                    # by RMSD, to this MDS structure.
 
-            centers[i] = new_center
+                    # reshape the medoid for RMSD
+                    medoid = medoid[np.newaxis, :, :]
+                    medoid_g = rmsd.calculate_G(medoid)
+                    medoid_irmsd, _ = rmsd.reshape_irmsd(medoid)
+
+                    # actually compute the RMSDs
+                    d = IRMSD.rmsd_one_to_all(medoid_irmsd, xyzlist_irmsd[assignments == i, :, :],
+                        medoid_g, xyzlist_G[assignments == i, :, :], n_atoms, 0)
+
+                    # choose the structure that was closest to be the medoid
+                    medoid = xyzlist[assignments == i, :, :][np.argmin(d)]
+
+            centers[i] = medoid
         
         # prepare the new centers for RMSD
         centers_G = rmsd.calculate_G(centers)
@@ -179,7 +197,8 @@ def average_structure(X):
     -----
     This code was adapted from the CSB toolbox (MIT License), https://csb.codeplex.com/
     """
-    B = gower_matrix(X.astype(np.float64))
+    X = X.astype(float)
+    B = gower_matrix(X)
     v, U = scipy.linalg.eigh(B)
     if np.iscomplex(v).any():
         v = v.real

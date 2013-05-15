@@ -55,6 +55,9 @@ def main():
 
     if args.implementation == 'c':
         log('clustering: kmeans (C)')
+        if args.nearest_medoid:
+            raise NotImplementedError('nearest_medoid is only implemented on the'
+                                      'pure python platform (-i py)')
         results = ckmeans_mds(xyzlist, k=args.n_clusters, n_real_atoms=n_real_atoms,
                              max_time=args.max_time, max_iters=args.max_iters,
                              threshold=args.epsilon)
@@ -69,11 +72,15 @@ def main():
         xyzlist = xyzlist[:, 0:n_real_atoms, :]
 
         results = pykmeans_mds(xyzlist, k=args.n_clusters, max_iters=args.max_iters,
-                               max_time=args.max_time, threshold=args.epsilon)
+                               max_time=args.max_time, threshold=args.epsilon,
+                               nearest_medoid=args.nearest_medoid)
         centers, assignments, distances, scores, times = results
 
     elif args.implementation == 'medoids':
         log('clustering: k medoids')
+        if args.nearest_medoid:
+            raise NotImplementedError('nearest_medoid is only for the kmeans code')
+
         from msmbuilder.metrics import RMSD
         metric = RMSD()
         # again, let's not deal with the padding atoms. we'll let the msmbuilder TheoData
@@ -219,6 +226,13 @@ def parse_cmdline():
         HDF5 format trajectories are accepted, because we use some nontrivial
         sliceing and striding that is a bit of a pain to implement with the
         order format readers.''')
+    parser.add_argument('-m', '--nearest_medoid', action='store_true', help='''
+        Somewhat hacky option, specific to the pure python implementation (-i 
+        py). After computing the mean via the MDS averaging procedure, we
+        instead choose as the center the data point in that grouping closest
+        to the MDS structure. So this is really a medoids type approach.''')
+
+
     output = parser.add_argument_group('output')
     output.add_argument('-o', '--output', required=True, default='Data/',
         help='''path to output directory.''')
