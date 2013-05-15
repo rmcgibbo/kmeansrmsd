@@ -141,6 +141,7 @@ def load_trajs(project, project_root, atom_indices, stride):
         return length // stride + bool(length % stride)
 
     trajs = [t for t in project['trajs'] if t['errors'] is None]
+    assert len(trajs) > 0, 'no trajs found in project file'
 
     n_frames = sum(length_after_stride(t['length'], stride) for t in trajs)
     n_real_atoms = len(atom_indices)
